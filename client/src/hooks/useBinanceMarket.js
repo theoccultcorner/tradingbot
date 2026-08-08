@@ -4,13 +4,10 @@ import {
   useState,
 } from "react";
 
-const SERVER_HTTP_URL =
-  import.meta.env.VITE_SERVER_HTTP_URL ||
-  "http://localhost:5000";
-
-const SERVER_SOCKET_URL =
-  import.meta.env.VITE_SERVER_SOCKET_URL ||
-  "ws://localhost:5000/ws";
+import {
+  SERVER_HTTP_URL,
+  SERVER_SOCKET_URL,
+} from "../config/server.js";
 
 const INITIAL_STATE = {
   candles: [],

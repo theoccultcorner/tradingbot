@@ -6,10 +6,9 @@ import {
   useState,
 } from "react";
 
-const API_BASE_URL =
-  import.meta.env
-    .VITE_API_URL ||
-  "http://localhost:5000";
+import {
+  serverUrl,
+} from "../config/server.js";
 
 const DEFAULT_STARTING_CASH =
   300;
@@ -175,9 +174,24 @@ async function apiRequest(
   path,
   options = {},
 ) {
+  /*
+   * All API calls now use the shared
+   * client server configuration.
+   *
+   * Local development:
+   * http://localhost:5000
+   *
+   * Production:
+   * https://your-render-server.onrender.com
+   */
+  const url =
+    serverUrl(
+      path,
+    );
+
   const response =
     await fetch(
-      `${API_BASE_URL}${path}`,
+      url,
       {
         ...options,
 
@@ -325,31 +339,39 @@ function usePaperPortfolio({
       0,
     );
 
-  function applyPortfolio(
-    portfolio,
-  ) {
-    const normalized =
-      normalizePortfolio(
+  const applyPortfolio =
+    useCallback(
+      (
         portfolio,
-      );
+      ) => {
+        const normalized =
+          normalizePortfolio(
+            portfolio,
+          );
 
-    stateVersionRef.current +=
-      1;
+        stateVersionRef.current +=
+          1;
 
-    setRawPortfolio(
-      normalized,
+        if (
+          mountedRef.current
+        ) {
+          setRawPortfolio(
+            normalized,
+          );
+
+          setUpdatedAt(
+            Date.now(),
+          );
+
+          setError(
+            "",
+          );
+        }
+
+        return normalized;
+      },
+      [],
     );
-
-    setUpdatedAt(
-      Date.now(),
-    );
-
-    setError(
-      "",
-    );
-
-    return normalized;
-  }
 
   const loadPortfolio =
     useCallback(
@@ -358,7 +380,8 @@ function usePaperPortfolio({
           false,
       } = {}) => {
         if (
-          !silent
+          !silent &&
+          mountedRef.current
         ) {
           setLoading(
             true,
@@ -366,12 +389,12 @@ function usePaperPortfolio({
         }
 
         /*
-         * Record the state version at the
-         * moment this GET starts.
+         * Record the state version when this
+         * GET begins.
          *
-         * If an order completes before this
-         * GET comes back, we discard the old
-         * response.
+         * If a BUY/SELL completes before the
+         * response arrives, we throw away the
+         * stale GET result.
          */
         const versionAtStart =
           stateVersionRef.current;
@@ -638,6 +661,9 @@ function usePaperPortfolio({
 
         /*
          * Authoritative account valuation.
+         *
+         * Equity =
+         * cash + current market value
          */
         const totalEquity =
           cash +
@@ -809,16 +835,12 @@ function usePaperPortfolio({
           }
 
           /*
-           * CRITICAL FIX
+           * The server returns the complete
+           * portfolio AFTER the trade.
            *
-           * The server has already completed
-           * the SQLite transaction and returns
-           * the authoritative POST-TRADE
-           * portfolio.
-           *
-           * Apply it immediately.
-           *
-           * Do NOT wait for another GET.
+           * Use that immediately so SELL
+           * proceeds show up in cash without
+           * waiting for another refresh.
            */
           if (
             result.portfolio
@@ -827,10 +849,6 @@ function usePaperPortfolio({
               result.portfolio,
             );
           } else {
-            /*
-             * Only use another GET as a
-             * compatibility fallback.
-             */
             await loadPortfolio({
               silent:
                 true,
@@ -839,6 +857,7 @@ function usePaperPortfolio({
 
           return {
             ...result,
+
             success:
               true,
           };
@@ -856,6 +875,7 @@ function usePaperPortfolio({
         }
       },
       [
+        applyPortfolio,
         loadPortfolio,
       ],
     );
@@ -910,9 +930,8 @@ function usePaperPortfolio({
           }
 
           /*
-           * Same principle as order execution:
-           * immediately trust the portfolio
-           * returned by SQLite.
+           * Immediately use the reset
+           * portfolio returned by the server.
            */
           if (
             result.portfolio
@@ -926,6 +945,7 @@ function usePaperPortfolio({
 
           return {
             ...result,
+
             success:
               true,
           };
@@ -943,6 +963,7 @@ function usePaperPortfolio({
         }
       },
       [
+        applyPortfolio,
         loadPortfolio,
       ],
     );

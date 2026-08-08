@@ -3,10 +3,9 @@ import {
   useState,
 } from "react";
 
-const SERVER_HTTP_URL =
-  import.meta.env
-    .VITE_SERVER_HTTP_URL ||
-  "http://localhost:5000";
+import {
+  serverUrl,
+} from "../config/server.js";
 
 const BINANCE_STREAM_URL =
   "wss://stream.binance.us:9443/stream";
@@ -18,7 +17,8 @@ const DEFAULT_SYMBOLS = [
   "DOGEUSD",
 ];
 
-const MAX_CANDLES = 1500;
+const MAX_CANDLES =
+  1500;
 
 function createMarketState(
   symbol,
@@ -126,7 +126,8 @@ function normalizeHistoricalCandles(
     new Map();
 
   for (
-    const candle of candles
+    const candle of
+      candles
   ) {
     const time =
       Number(
@@ -141,40 +142,67 @@ function normalizeHistoricalCandles(
       continue;
     }
 
+    const open =
+      Number(
+        candle.open,
+      );
+
+    const high =
+      Number(
+        candle.high,
+      );
+
+    const low =
+      Number(
+        candle.low,
+      );
+
+    const close =
+      Number(
+        candle.close,
+      );
+
+    if (
+      !Number.isFinite(
+        open,
+      ) ||
+      !Number.isFinite(
+        high,
+      ) ||
+      !Number.isFinite(
+        low,
+      ) ||
+      !Number.isFinite(
+        close,
+      )
+    ) {
+      continue;
+    }
+
     map.set(
       time,
       {
         time,
 
-        open:
-          Number(
-            candle.open,
-          ),
+        open,
 
-        high:
-          Number(
-            candle.high,
-          ),
+        high,
 
-        low:
-          Number(
-            candle.low,
-          ),
+        low,
 
-        close:
-          Number(
-            candle.close,
-          ),
+        close,
 
         volume:
           Number(
             candle.volume,
-          ),
+          ) ||
+          0,
 
         closeTime:
           Number(
             candle.closeTime,
-          ),
+          ) ||
+          null,
 
         closed:
           candle.closed !==
@@ -203,7 +231,9 @@ function mergeCandle(
   candles = [],
   candle,
 ) {
-  if (!candle) {
+  if (
+    !candle
+  ) {
     return candles;
   }
 
@@ -298,17 +328,47 @@ export default function useFourMarketCharts({
           const query =
             new URLSearchParams({
               symbol,
-
               timeframe,
             });
 
-          const response =
-            await fetch(
-              `${SERVER_HTTP_URL}/api/multi-chart/candles?${query}`,
+          /*
+           * IMPORTANT
+           *
+           * This now uses the shared server
+           * configuration.
+           *
+           * Local development:
+           * http://localhost:5000
+           *
+           * Vercel production:
+           * https://your-render-server.onrender.com
+           */
+          const url =
+            serverUrl(
+              `/api/multi-chart/candles?${query.toString()}`,
             );
 
-          const data =
-            await response.json();
+          console.log(
+            `Loading ${symbol} chart history from:`,
+            url,
+          );
+
+          const response =
+            await fetch(
+              url,
+            );
+
+          let data =
+            {};
+
+          try {
+            data =
+              await response.json();
+          } catch {
+            throw new Error(
+              `The server returned invalid data for ${symbol}.`,
+            );
+          }
 
           if (
             !response.ok
@@ -419,14 +479,12 @@ export default function useFourMarketCharts({
 
       async function start() {
         /*
-         * IMPORTANT:
+         * Load historical candles first.
          *
-         * Load the full historical datasets
-         * BEFORE opening the live WebSocket.
-         *
-         * This prevents the chart from first
-         * receiving one live candle and
-         * treating that as its initial dataset.
+         * We do this before opening the live
+         * Binance WebSocket so each chart starts
+         * with a full dataset instead of one
+         * live candle.
          */
         await Promise.allSettled(
           symbols.map(
@@ -457,9 +515,17 @@ export default function useFourMarketCharts({
               "/",
             );
 
+        const socketUrl =
+          `${BINANCE_STREAM_URL}?streams=${streams}`;
+
+        console.log(
+          "Opening four-chart Binance stream:",
+          socketUrl,
+        );
+
         socket =
           new WebSocket(
-            `${BINANCE_STREAM_URL}?streams=${streams}`,
+            socketUrl,
           );
 
         socket.addEventListener(
@@ -553,6 +619,26 @@ export default function useFourMarketCharts({
                   data.k,
                 );
 
+              if (
+                !Number.isFinite(
+                  candle.time,
+                ) ||
+                !Number.isFinite(
+                  candle.open,
+                ) ||
+                !Number.isFinite(
+                  candle.high,
+                ) ||
+                !Number.isFinite(
+                  candle.low,
+                ) ||
+                !Number.isFinite(
+                  candle.close,
+                )
+              ) {
+                return;
+              }
+
               setMarkets(
                 (
                   previous,
@@ -586,6 +672,9 @@ export default function useFourMarketCharts({
 
                       error:
                         "",
+
+                      historicalReady:
+                        true,
 
                       connectionStatus:
                         "Live",
