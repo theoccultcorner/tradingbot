@@ -48,6 +48,43 @@ export default function useServerSettings({
       false,
     );
 
+  /*
+   * Keep the latest objects in refs.
+   *
+   * This prevents React from treating newly
+   * created object instances as dependency
+   * changes on every render.
+   */
+  const defaultsRef =
+    useRef(
+      defaults,
+    );
+
+  const forceDisabledFieldsRef =
+    useRef(
+      forceDisabledFields,
+    );
+
+  useEffect(
+    () => {
+      defaultsRef.current =
+        defaults;
+    },
+    [
+      defaults,
+    ],
+  );
+
+  useEffect(
+    () => {
+      forceDisabledFieldsRef.current =
+        forceDisabledFields;
+    },
+    [
+      forceDisabledFields,
+    ],
+  );
+
   const loadSettings =
     useCallback(
       async () => {
@@ -97,16 +134,35 @@ export default function useServerSettings({
             );
           }
 
-          setSettingsState({
-            ...defaults,
+          const normalizedSettings = {
+            ...defaultsRef.current,
 
             ...(
               data.settings ||
               {}
             ),
 
-            ...forceDisabledFields,
-          });
+            ...forceDisabledFieldsRef.current,
+          };
+
+          setSettingsState(
+            normalizedSettings,
+          );
+
+          setError(
+            "",
+          );
+
+          initializedRef.current =
+            true;
+
+          return {
+            success:
+              true,
+
+            settings:
+              normalizedSettings,
+          };
         } catch (
           requestError
         ) {
@@ -120,28 +176,50 @@ export default function useServerSettings({
               "Could not load settings.",
           );
 
-          setSettingsState({
-            ...defaults,
-            ...forceDisabledFields,
-          });
-        } finally {
+          const fallbackSettings = {
+            ...defaultsRef.current,
+
+            ...forceDisabledFieldsRef.current,
+          };
+
+          setSettingsState(
+            fallbackSettings,
+          );
+
           initializedRef.current =
             true;
 
+          return {
+            success:
+              false,
+
+            message:
+              requestError.message ||
+              "Could not load settings.",
+          };
+        } finally {
           setLoading(
             false,
           );
         }
       },
       [
-        defaults,
-        forceDisabledFields,
         type,
       ],
     );
 
+  /*
+   * Load once when the settings TYPE changes.
+   *
+   * This is the important fix that stops
+   * autoTrader / riskManager from firing
+   * endless GET requests.
+   */
   useEffect(
     () => {
+      initializedRef.current =
+        false;
+
       loadSettings();
 
       return () => {
@@ -151,6 +229,9 @@ export default function useServerSettings({
           clearTimeout(
             saveTimerRef.current,
           );
+
+          saveTimerRef.current =
+            null;
         }
       };
     },
@@ -171,7 +252,8 @@ export default function useServerSettings({
 
           const payload = {
             ...nextSettings,
-            ...forceDisabledFields,
+
+            ...forceDisabledFieldsRef.current,
           };
 
           const response =
@@ -226,18 +308,22 @@ export default function useServerSettings({
           }
 
           const savedSettings = {
-            ...defaults,
+            ...defaultsRef.current,
 
             ...(
               data.settings ||
               payload
             ),
 
-            ...forceDisabledFields,
+            ...forceDisabledFieldsRef.current,
           };
 
           setSettingsState(
             savedSettings,
+          );
+
+          setError(
+            "",
           );
 
           return {
@@ -271,8 +357,6 @@ export default function useServerSettings({
         }
       },
       [
-        defaults,
-        forceDisabledFields,
         type,
       ],
     );
@@ -299,7 +383,8 @@ export default function useServerSettings({
 
             const normalizedNext = {
               ...next,
-              ...forceDisabledFields,
+
+              ...forceDisabledFieldsRef.current,
             };
 
             if (
@@ -329,7 +414,31 @@ export default function useServerSettings({
         );
       },
       [
-        forceDisabledFields,
+        saveSettings,
+      ],
+    );
+
+  const saveNow =
+    useCallback(
+      async (
+        nextSettings,
+      ) => {
+        if (
+          saveTimerRef.current
+        ) {
+          clearTimeout(
+            saveTimerRef.current,
+          );
+
+          saveTimerRef.current =
+            null;
+        }
+
+        return saveSettings(
+          nextSettings,
+        );
+      },
+      [
         saveSettings,
       ],
     );
@@ -346,7 +455,6 @@ export default function useServerSettings({
     reload:
       loadSettings,
 
-    saveNow:
-      saveSettings,
+    saveNow,
   };
 }
