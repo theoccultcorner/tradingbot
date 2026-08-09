@@ -3934,3 +3934,122 @@ body::-webkit-scrollbar-thumb:hover {
     width: 6px;
   }
 }
+
+/* =========================================================
+   COMPACT MOBILE CHART INTERVAL OVERRIDE
+   ========================================================= */
+
+@media (max-width: 600px) {
+  .timeframe-toolbar,
+  .navigation-timeframe-toolbar {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    width: 100%;
+    max-width: 100%;
+    gap: 6px;
+    margin-bottom: 8px;
+    padding: 6px 7px;
+    overflow: hidden;
+    border-radius: 8px;
+  }
+
+  .timeframe-toolbar > span,
+  .timeframe-toolbar > strong,
+  .timeframe-toolbar > label,
+  .navigation-timeframe-toolbar > span,
+  .navigation-timeframe-toolbar > strong,
+  .navigation-timeframe-toolbar > label {
+    flex: 0 0 auto;
+    font-size: 10px;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .timeframe-buttons,
+  .navigation-timeframe-toolbar .timeframe-buttons {
+    display: flex;
+    flex: 1 1 auto;
+    width: 0;
+    min-width: 0;
+    grid-template-columns: none;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 3px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-inline: contain;
+  }
+
+  .timeframe-buttons::-webkit-scrollbar,
+  .navigation-timeframe-toolbar
+    .timeframe-buttons::-webkit-scrollbar {
+    display: none;
+  }
+
+  .timeframe-button,
+  .navigation-timeframe-toolbar .timeframe-button {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 36px;
+    min-height: 28px;
+    height: 28px;
+    padding: 3px 6px;
+    border-radius: 6px;
+    font-size: 10px;
+    line-height: 1;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 760px) {
+  .four-market-toolbar {
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .four-chart-timeframes {
+    display: flex;
+    width: 100%;
+    grid-template-columns: none;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    gap: 4px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-inline: contain;
+  }
+
+  .four-chart-timeframes::-webkit-scrollbar {
+    display: none;
+  }
+
+  .four-chart-timeframe {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 38px;
+    min-height: 30px;
+    height: 30px;
+    padding: 4px 7px;
+    font-size: 10px;
+    line-height: 1;
+  }
+}
+
+@media (max-width: 390px) {
+  .timeframe-buttons,
+  .scanner-symbols {
+    grid-template-columns: none;
+  }
+
+  .four-chart-timeframes {
+    grid-template-columns: none;
+  }
+}
+
