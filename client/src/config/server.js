@@ -6,10 +6,14 @@ const rawHttpUrl =
   "http://localhost:5000";
 
 export const SERVER_HTTP_URL =
-  rawHttpUrl.replace(
-    /\/+$/,
-    "",
-  );
+  String(
+    rawHttpUrl,
+  )
+    .trim()
+    .replace(
+      /\/+$/,
+      "",
+    );
 
 const configuredSocketUrl =
   import.meta.env
@@ -19,10 +23,14 @@ function buildSocketUrl() {
   if (
     configuredSocketUrl
   ) {
-    return configuredSocketUrl.replace(
-      /\/+$/,
-      "",
-    );
+    return String(
+      configuredSocketUrl,
+    )
+      .trim()
+      .replace(
+        /\/+$/,
+        "",
+      );
   }
 
   try {
@@ -38,7 +46,14 @@ function buildSocketUrl() {
         : "ws:";
 
     return `${protocol}//${url.host}/ws`;
-  } catch {
+  } catch (
+    error
+  ) {
+    console.error(
+      "Could not build server WebSocket URL:",
+      error,
+    );
+
     return "ws://localhost:5000/ws";
   }
 }
@@ -51,8 +66,9 @@ export function serverUrl(
 ) {
   const normalizedPath =
     String(
-      path || "",
-    );
+      path ||
+        "",
+    ).trim();
 
   if (
     !normalizedPath
