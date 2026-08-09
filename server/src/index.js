@@ -31,12 +31,18 @@ import {
 const port =
   Number(
     process.env.PORT,
-  ) || 5000;
+  ) ||
+  5000;
+
+const host =
+  process.env.HOST ||
+  "0.0.0.0";
 
 let latestMarketState =
   null;
 
-let websocketController;
+let websocketController =
+  null;
 
 const tradingEngineService =
   new ServerTradingEngineService();
@@ -139,7 +145,8 @@ const autoSelectorService =
       selection,
     ) {
       if (
-        !selection?.symbol
+        !selection
+          ?.symbol
       ) {
         return;
       }
@@ -179,10 +186,6 @@ const autoSelectorService =
 
 const positionRiskMonitorService =
   new PositionRiskMonitorService({
-    /*
-     * Use the exact same risk settings
-     * as the main server trading engine.
-     */
     getTradingSettings() {
       return {
         ...tradingEngineService
@@ -190,13 +193,6 @@ const positionRiskMonitorService =
       };
     },
 
-    /*
-     * The current active market is already
-     * protected by ServerTradingEngineService.
-     *
-     * The background monitor protects all
-     * other open positions.
-     */
     getActiveSymbol() {
       return (
         latestMarketState
@@ -205,10 +201,6 @@ const positionRiskMonitorService =
       );
     },
 
-    /*
-     * Keep the main trading-engine UI aware
-     * of background risk exits.
-     */
     async onRiskEvent(
       event,
     ) {
@@ -292,10 +284,14 @@ const app =
 const httpServer =
   app.listen(
     port,
-
+    host,
     async () => {
       console.log(
-        `Trading server running at http://localhost:${port}`,
+        `Trading server listening on ${host}:${port}`,
+      );
+
+      console.log(
+        `Public Render port: ${process.env.PORT || "not provided"}`,
       );
 
       console.log(
@@ -326,10 +322,6 @@ const httpServer =
         }`,
       );
 
-      /*
-       * Start monitoring all background
-       * positions.
-       */
       positionRiskMonitorService
         .start();
 
@@ -354,6 +346,23 @@ const httpServer =
       }
     },
   );
+
+/*
+ * Render can occasionally reset long-lived
+ * HTTP connections.
+ *
+ * Render specifically recommends increasing
+ * these timeout values for intermittent
+ * connection-reset behavior.
+ */
+httpServer.keepAliveTimeout =
+  120000;
+
+httpServer.headersTimeout =
+  125000;
+
+httpServer.requestTimeout =
+  120000;
 
 websocketController =
   attachWebSocketServer({
@@ -426,6 +435,10 @@ function shutdown(
 
   httpServer.close(
     () => {
+      console.log(
+        "HTTP server closed.",
+      );
+
       process.exit(
         0,
       );
@@ -434,18 +447,20 @@ function shutdown(
 
   setTimeout(
     () => {
+      console.error(
+        "Forced shutdown after timeout.",
+      );
+
       process.exit(
         1,
       );
     },
-
     10000,
   ).unref();
 }
 
 process.on(
   "SIGINT",
-
   () =>
     shutdown(
       "SIGINT",
@@ -454,9 +469,32 @@ process.on(
 
 process.on(
   "SIGTERM",
-
   () =>
     shutdown(
       "SIGTERM",
     ),
+);
+
+process.on(
+  "uncaughtException",
+  (
+    error,
+  ) => {
+    console.error(
+      "Uncaught exception:",
+      error,
+    );
+  },
+);
+
+process.on(
+  "unhandledRejection",
+  (
+    reason,
+  ) => {
+    console.error(
+      "Unhandled promise rejection:",
+      reason,
+    );
+  },
 );
