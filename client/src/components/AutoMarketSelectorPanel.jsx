@@ -15,12 +15,23 @@ const DEFAULT_SYMBOLS = [
 ];
 
 const DEFAULT_SETTINGS = {
-  enabled: false,
-  timeframe: "15m",
-  minimumScore: 60,
-  minimumConfidence: 60,
-  scanIntervalMinutes: 5,
-  symbols: DEFAULT_SYMBOLS,
+  enabled:
+    false,
+
+  timeframe:
+    "15m",
+
+  minimumScore:
+    60,
+
+  minimumConfidence:
+    60,
+
+  scanIntervalMinutes:
+    5,
+
+  symbols:
+    DEFAULT_SYMBOLS,
 };
 
 function AutoMarketSelectorPanel({
@@ -32,53 +43,68 @@ function AutoMarketSelectorPanel({
     error,
     saveSettings,
     runNow,
-  } = autoSelector;
+  } =
+    autoSelector;
 
   const [
     draft,
     setDraft,
-  ] = useState(
-    DEFAULT_SETTINGS,
-  );
+  ] =
+    useState(
+      DEFAULT_SETTINGS,
+    );
 
   /*
-   * Whenever the server selector state changes,
-   * synchronize the form with the saved values.
+   * Whenever the server selector
+   * state changes, synchronize the
+   * form with the saved values.
    */
-  useEffect(() => {
-    if (
-      !selector?.settings
-    ) {
-      return;
-    }
+  useEffect(
+    () => {
+      if (
+        !selector
+          ?.settings
+      ) {
+        return;
+      }
 
-    setDraft({
-      ...DEFAULT_SETTINGS,
-      ...selector.settings,
+      setDraft({
+        ...DEFAULT_SETTINGS,
+        ...selector.settings,
 
-      symbols:
-        Array.isArray(
-          selector.settings
-            .symbols,
-        ) &&
-        selector.settings
-          .symbols.length >
-          0
-          ? selector.settings
-              .symbols
-          : DEFAULT_SYMBOLS,
-    });
-  }, [
-    selector?.settings,
-  ]);
+        symbols:
+          Array.isArray(
+            selector
+              .settings
+              .symbols,
+          ) &&
+          selector
+            .settings
+            .symbols
+            .length >
+            0
+            ? selector
+                .settings
+                .symbols
+            : DEFAULT_SYMBOLS,
+      });
+    },
+    [
+      selector
+        ?.settings,
+    ],
+  );
 
   function updateDraft(
     name,
     value,
   ) {
     setDraft(
-      (previous) => ({
+      (
+        previous,
+      ) => ({
         ...previous,
+
         [name]:
           value,
       }),
@@ -102,7 +128,9 @@ function AutoMarketSelectorPanel({
         symbol,
       )
         ? currentSymbols.filter(
-            (item) =>
+            (
+              item,
+            ) =>
               item !==
               symbol,
           )
@@ -114,29 +142,18 @@ function AutoMarketSelectorPanel({
   }
 
   async function handleSave() {
-    const result =
-      await saveSettings(
-        draft,
-      );
-
-    if (
-      result?.success
-    ) {
-      /*
-       * The hook updates selector state
-       * from the server response.
-       *
-       * useEffect above then synchronizes
-       * the visible form.
-       */
-      return;
-    }
+    await saveSettings(
+      draft,
+    );
   }
 
   async function handleToggle() {
     const nextEnabled =
-      !selector.settings
-        ?.enabled;
+      !Boolean(
+        selector
+          ?.settings
+          ?.enabled,
+      );
 
     await saveSettings({
       ...draft,
@@ -146,11 +163,27 @@ function AutoMarketSelectorPanel({
     });
   }
 
+  async function handleRunNow() {
+    await runNow();
+  }
+
+  const selectorEnabled =
+    Boolean(
+      selector
+        ?.settings
+        ?.enabled,
+    );
+
+  const lastSelection =
+    selector
+      ?.lastSelection ||
+    null;
+
   return (
-    <section className="panel auto-selector-panel">
-      <div className="panel-header">
+    <section className="panel-card auto-market-selector-panel">
+      <div className="panel-heading">
         <div>
-          <span className="panel-kicker">
+          <span className="eyebrow">
             AUTOMATIC MARKET ROTATION
           </span>
 
@@ -162,18 +195,18 @@ function AutoMarketSelectorPanel({
         <button
           type="button"
           className={
-            selector.settings
-              ?.enabled
+            selectorEnabled
               ? "auto-toggle enabled"
               : "auto-toggle"
           }
-          disabled={loading}
+          disabled={
+            loading
+          }
           onClick={
             handleToggle
           }
         >
-          {selector.settings
-            ?.enabled
+          {selectorEnabled
             ? "Enabled"
             : "Disabled"}
         </button>
@@ -194,7 +227,8 @@ function AutoMarketSelectorPanel({
             ) =>
               updateDraft(
                 "timeframe",
-                event.target
+                event
+                  .target
                   .value,
               )
             }
@@ -207,12 +241,20 @@ function AutoMarketSelectorPanel({
               15m
             </option>
 
+            <option value="30m">
+              30m
+            </option>
+
             <option value="1h">
               1h
             </option>
 
             <option value="4h">
               4h
+            </option>
+
+            <option value="1d">
+              1d
             </option>
           </select>
         </label>
@@ -224,6 +266,9 @@ function AutoMarketSelectorPanel({
 
           <input
             type="number"
+            min="0"
+            max="100"
+            step="1"
             value={
               draft.minimumScore
             }
@@ -233,7 +278,8 @@ function AutoMarketSelectorPanel({
               updateDraft(
                 "minimumScore",
                 Number(
-                  event.target
+                  event
+                    .target
                     .value,
                 ),
               )
@@ -248,6 +294,9 @@ function AutoMarketSelectorPanel({
 
           <input
             type="number"
+            min="0"
+            max="100"
+            step="1"
             value={
               draft.minimumConfidence
             }
@@ -257,7 +306,8 @@ function AutoMarketSelectorPanel({
               updateDraft(
                 "minimumConfidence",
                 Number(
-                  event.target
+                  event
+                    .target
                     .value,
                 ),
               )
@@ -273,6 +323,7 @@ function AutoMarketSelectorPanel({
           <input
             type="number"
             min="1"
+            step="1"
             value={
               draft
                 .scanIntervalMinutes
@@ -283,7 +334,8 @@ function AutoMarketSelectorPanel({
               updateDraft(
                 "scanIntervalMinutes",
                 Number(
-                  event.target
+                  event
+                    .target
                     .value,
                 ),
               )
@@ -294,7 +346,9 @@ function AutoMarketSelectorPanel({
 
       <div className="scanner-symbols">
         {DEFAULT_SYMBOLS.map(
-          (symbol) => {
+          (
+            symbol,
+          ) => {
             const selected =
               Array.isArray(
                 draft.symbols,
@@ -306,7 +360,9 @@ function AutoMarketSelectorPanel({
             return (
               <button
                 type="button"
-                key={symbol}
+                key={
+                  symbol
+                }
                 className={
                   selected
                     ? "scanner-symbol active"
@@ -332,7 +388,9 @@ function AutoMarketSelectorPanel({
         <button
           type="button"
           className="run-scanner-button"
-          disabled={loading}
+          disabled={
+            loading
+          }
           onClick={
             handleSave
           }
@@ -345,12 +403,16 @@ function AutoMarketSelectorPanel({
         <button
           type="button"
           className="run-scanner-button"
-          disabled={loading}
+          disabled={
+            loading
+          }
           onClick={
-            runNow
+            handleRunNow
           }
         >
-          Scan Now
+          {loading
+            ? "Scanning..."
+            : "Scan Now"}
         </button>
       </div>
 
@@ -366,38 +428,32 @@ function AutoMarketSelectorPanel({
         </span>
 
         <strong>
-          {selector
-            .lastSelection
+          {lastSelection
             ?.symbol ||
             "No qualified market"}
         </strong>
 
         <small>
-          {selector
-            .lastSelection
+          {lastSelection
             ?.label ||
             "Waiting for a scan"}
         </small>
 
-        {selector
-          .lastSelection
+        {lastSelection
           ?.score !==
           null &&
-          selector
-            .lastSelection
+          lastSelection
             ?.score !==
             undefined && (
             <small>
               Score:{" "}
               {
-                selector
-                  .lastSelection
+                lastSelection
                   .score
               }{" "}
               · Confidence:{" "}
               {
-                selector
-                  .lastSelection
+                lastSelection
                   .confidence
               }
               %
@@ -406,9 +462,12 @@ function AutoMarketSelectorPanel({
       </div>
 
       <p className="auto-trader-note">
-        The selector only changes the active server market when a
-        full BUY setup meets both thresholds. It does not bypass
-        the server trading engine or risk controls.
+        The selector only changes the
+        active server market when a
+        full BUY setup meets both
+        thresholds. It does not bypass
+        the server trading engine or
+        risk controls.
       </p>
     </section>
   );

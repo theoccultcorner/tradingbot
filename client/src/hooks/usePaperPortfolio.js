@@ -174,16 +174,6 @@ async function apiRequest(
   path,
   options = {},
 ) {
-  /*
-   * All API calls now use the shared
-   * client server configuration.
-   *
-   * Local development:
-   * http://localhost:5000
-   *
-   * Production:
-   * https://your-render-server.onrender.com
-   */
   const url =
     serverUrl(
       path,
@@ -249,11 +239,6 @@ function getPositionQuote({
     };
   }
 
-  /*
-   * Never make a position temporarily
-   * worth $0 simply because its live quote
-   * failed.
-   */
   const entryPrice =
     positiveNumberOrNull(
       position
@@ -329,11 +314,6 @@ function usePaperPortfolio({
       true,
     );
 
-  /*
-   * Prevent an older GET response from
-   * overwriting a portfolio returned by a
-   * newer BUY/SELL transaction.
-   */
   const stateVersionRef =
     useRef(
       0,
@@ -388,14 +368,6 @@ function usePaperPortfolio({
           );
         }
 
-        /*
-         * Record the state version when this
-         * GET begins.
-         *
-         * If a BUY/SELL completes before the
-         * response arrives, we throw away the
-         * stale GET result.
-         */
         const versionAtStart =
           stateVersionRef.current;
 
@@ -659,12 +631,6 @@ function usePaperPortfolio({
           ) ||
           DEFAULT_STARTING_CASH;
 
-        /*
-         * Authoritative account valuation.
-         *
-         * Equity =
-         * cash + current market value
-         */
         const totalEquity =
           cash +
           marketValue;
@@ -834,14 +800,6 @@ function usePaperPortfolio({
             );
           }
 
-          /*
-           * The server returns the complete
-           * portfolio AFTER the trade.
-           *
-           * Use that immediately so SELL
-           * proceeds show up in cash without
-           * waiting for another refresh.
-           */
           if (
             result.portfolio
           ) {
@@ -929,10 +887,6 @@ function usePaperPortfolio({
             );
           }
 
-          /*
-           * Immediately use the reset
-           * portfolio returned by the server.
-           */
           if (
             result.portfolio
           ) {

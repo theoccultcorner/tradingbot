@@ -4,10 +4,9 @@ import {
   useState,
 } from "react";
 
-const SERVER_HTTP_URL =
-  import.meta.env
-    .VITE_SERVER_HTTP_URL ||
-  "http://localhost:5000";
+import {
+  serverUrl,
+} from "../config/server.js";
 
 const DEFAULT_STATE = {
   settings: {
@@ -24,27 +23,53 @@ const DEFAULT_STATE = {
   lastSelection: null,
 };
 
+async function readJson(
+  response,
+) {
+  const text =
+    await response.text();
+
+  if (
+    !text
+  ) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(
+      text,
+    );
+  } catch {
+    throw new Error(
+      "The selector server returned invalid JSON.",
+    );
+  }
+}
+
 export default function useAutoMarketSelector() {
   const [
     selector,
     setSelector,
-  ] = useState(
-    DEFAULT_STATE,
-  );
+  ] =
+    useState(
+      DEFAULT_STATE,
+    );
 
   const [
     loading,
     setLoading,
-  ] = useState(
-    true,
-  );
+  ] =
+    useState(
+      true,
+    );
 
   const [
     error,
     setError,
-  ] = useState(
-    "",
-  );
+  ] =
+    useState(
+      "",
+    );
 
   const loadState =
     useCallback(
@@ -56,34 +81,45 @@ export default function useAutoMarketSelector() {
 
           const response =
             await fetch(
-              `${SERVER_HTTP_URL}/api/auto-selector/state`,
+              serverUrl(
+                "/api/auto-selector/state",
+              ),
             );
 
           const data =
-            await response.json();
+            await readJson(
+              response,
+            );
 
           if (
             !response.ok
           ) {
             throw new Error(
               data.message ||
-                "Could not load selector state.",
+                `Could not load selector state. Status ${response.status}.`,
             );
           }
 
           setSelector(
-            data.selector,
+            data.selector ||
+              data.state ||
+              DEFAULT_STATE,
           );
 
           setError(
             "",
           );
+
+          return data;
         } catch (
           requestError
         ) {
           setError(
-            requestError.message,
+            requestError.message ||
+              "Could not load selector state.",
           );
+
+          return null;
         } finally {
           setLoading(
             false,
@@ -102,135 +138,198 @@ export default function useAutoMarketSelector() {
     ],
   );
 
-  async function saveSettings(
-    nextSettings,
-  ) {
-    try {
-      setLoading(
-        true,
-      );
+  const saveSettings =
+    useCallback(
+      async (
+        nextSettings,
+      ) => {
+        try {
+          setLoading(
+            true,
+          );
 
-      const response =
-        await fetch(
-          `${SERVER_HTTP_URL}/api/auto-selector/settings`,
-          {
-            method:
-              "POST",
-
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-
-            body:
-              JSON.stringify(
-                nextSettings,
+          const response =
+            await fetch(
+              serverUrl(
+                "/api/auto-selector/settings",
               ),
-          },
-        );
+              {
+                method:
+                  "POST",
 
-      const data =
-        await response.json();
+                headers: {
+                  "Content-Type":
+                    "application/json",
+                },
 
-      if (
-        !response.ok
-      ) {
-        throw new Error(
-          data.message ||
-            "Could not update selector settings.",
-        );
-      }
+                body:
+                  JSON.stringify(
+                    nextSettings,
+                  ),
+              },
+            );
 
-      setSelector(
-        data.selector,
-      );
+          const data =
+            await readJson(
+              response,
+            );
 
-      setError(
-        "",
-      );
+          if (
+            !response.ok
+          ) {
+            throw new Error(
+              data.message ||
+                `Could not update selector settings. Status ${response.status}.`,
+            );
+          }
 
-      return {
-        success:
-          true,
-      };
-    } catch (
-      requestError
-    ) {
-      setError(
-        requestError.message,
-      );
+          const nextSelector =
+            data.selector ||
+            data.state ||
+            {
+              ...selector,
 
-      return {
-        success:
-          false,
+              settings: {
+                ...selector.settings,
+                ...nextSettings,
+              },
+            };
 
-        message:
-          requestError.message,
-      };
-    } finally {
-      setLoading(
-        false,
-      );
-    }
-  }
+          setSelector(
+            nextSelector,
+          );
 
-  async function runNow() {
-    try {
-      setLoading(
-        true,
-      );
+          setError(
+            "",
+          );
 
-      const response =
-        await fetch(
-          `${SERVER_HTTP_URL}/api/auto-selector/run`,
-          {
-            method:
-              "POST",
-          },
-        );
+          return {
+            success:
+              true,
 
-      const data =
-        await response.json();
+            selector:
+              nextSelector,
 
-      if (
-        !response.ok
-      ) {
-        throw new Error(
-          data.message ||
-            "Automatic selection failed.",
-        );
-      }
+            ...data,
+          };
+        } catch (
+          requestError
+        ) {
+          setError(
+            requestError.message ||
+              "Could not update selector settings.",
+          );
 
-      setSelector(
-        data.state,
-      );
+          return {
+            success:
+              false,
 
-      setError(
-        "",
-      );
+            message:
+              requestError.message ||
+              "Could not update selector settings.",
+          };
+        } finally {
+          setLoading(
+            false,
+          );
+        }
+      },
+      [
+        selector,
+      ],
+    );
 
-      return data;
-    } catch (
-      requestError
-    ) {
-      setError(
-        requestError.message,
-      );
+  const runNow =
+    useCallback(
+      async () => {
+        try {
+          setLoading(
+            true,
+          );
 
-      return null;
-    } finally {
-      setLoading(
-        false,
-      );
-    }
-  }
+          const response =
+            await fetch(
+              serverUrl(
+                "/api/auto-selector/run",
+              ),
+              {
+                method:
+                  "POST",
+              },
+            );
+
+          const data =
+            await readJson(
+              response,
+            );
+
+          if (
+            !response.ok
+          ) {
+            throw new Error(
+              data.message ||
+                `Automatic selection failed. Status ${response.status}.`,
+            );
+          }
+
+          const nextSelector =
+            data.state ||
+            data.selector ||
+            DEFAULT_STATE;
+
+          setSelector(
+            nextSelector,
+          );
+
+          setError(
+            "",
+          );
+
+          return {
+            success:
+              true,
+
+            selector:
+              nextSelector,
+
+            ...data,
+          };
+        } catch (
+          requestError
+        ) {
+          setError(
+            requestError.message ||
+              "Automatic selection failed.",
+          );
+
+          return {
+            success:
+              false,
+
+            message:
+              requestError.message ||
+              "Automatic selection failed.",
+          };
+        } finally {
+          setLoading(
+            false,
+          );
+        }
+      },
+      [],
+    );
 
   return {
     selector,
+
     loading,
+
     error,
+
     loadState,
+
     saveSettings,
+
     runNow,
   };
 }

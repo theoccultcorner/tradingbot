@@ -289,6 +289,29 @@ function mergeCandle(
   );
 }
 
+async function readJson(
+  response,
+) {
+  const text =
+    await response.text();
+
+  if (
+    !text
+  ) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(
+      text,
+    );
+  } catch {
+    throw new Error(
+      "The chart server returned invalid JSON.",
+    );
+  }
+}
+
 export default function useFourMarketCharts({
   symbols =
     DEFAULT_SYMBOLS,
@@ -332,43 +355,24 @@ export default function useFourMarketCharts({
             });
 
           /*
-           * IMPORTANT
-           *
-           * This now uses the shared server
+           * All historical chart requests
+           * go through the shared server
            * configuration.
-           *
-           * Local development:
-           * http://localhost:5000
-           *
-           * Vercel production:
-           * https://your-render-server.onrender.com
            */
           const url =
             serverUrl(
               `/api/multi-chart/candles?${query.toString()}`,
             );
 
-          console.log(
-            `Loading ${symbol} chart history from:`,
-            url,
-          );
-
           const response =
             await fetch(
               url,
             );
 
-          let data =
-            {};
-
-          try {
-            data =
-              await response.json();
-          } catch {
-            throw new Error(
-              `The server returned invalid data for ${symbol}.`,
+          const data =
+            await readJson(
+              response,
             );
-          }
 
           if (
             !response.ok
@@ -395,10 +399,6 @@ export default function useFourMarketCharts({
               candles.length -
                 1
             ];
-
-          console.log(
-            `Four-chart history loaded: ${symbol} ${timeframe} (${candles.length} candles)`,
-          );
 
           setMarkets(
             (
@@ -427,10 +427,14 @@ export default function useFourMarketCharts({
                   "",
 
                 historicalReady:
-                  true,
+                  candles.length >
+                  0,
 
                 connectionStatus:
-                  "History loaded",
+                  candles.length >
+                  0
+                    ? "History loaded"
+                    : "No history",
               },
             }),
           );
@@ -479,12 +483,9 @@ export default function useFourMarketCharts({
 
       async function start() {
         /*
-         * Load historical candles first.
-         *
-         * We do this before opening the live
-         * Binance WebSocket so each chart starts
-         * with a full dataset instead of one
-         * live candle.
+         * Load historical candles before
+         * opening the live stream so the
+         * chart begins with a full dataset.
          */
         await Promise.allSettled(
           symbols.map(
@@ -517,11 +518,6 @@ export default function useFourMarketCharts({
 
         const socketUrl =
           `${BINANCE_STREAM_URL}?streams=${streams}`;
-
-        console.log(
-          "Opening four-chart Binance stream:",
-          socketUrl,
-        );
 
         socket =
           new WebSocket(
@@ -563,10 +559,6 @@ export default function useFourMarketCharts({
 
                 return next;
               },
-            );
-
-            console.log(
-              `Four-market stream connected: ${timeframe}`,
             );
           },
         );

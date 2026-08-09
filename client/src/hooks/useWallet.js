@@ -4,12 +4,38 @@ import {
   useState,
 } from "react";
 
-const SERVER_HTTP_URL =
-  import.meta.env
-    .VITE_SERVER_HTTP_URL ||
-  "http://localhost:5000";
+import {
+  serverUrl,
+} from "../config/server.js";
 
-export default function useWallet() {
+const DEFAULT_REFRESH_MS =
+  5000;
+
+async function readJson(
+  response,
+) {
+  const text =
+    await response.text();
+
+  if (!text) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(
+      text,
+    );
+  } catch {
+    throw new Error(
+      "The wallet server returned invalid JSON.",
+    );
+  }
+}
+
+export default function useWallet({
+  refreshMs =
+    DEFAULT_REFRESH_MS,
+} = {}) {
   const [
     wallet,
     setWallet,
@@ -36,42 +62,68 @@ export default function useWallet() {
 
   const loadWallet =
     useCallback(
-      async () => {
+      async ({
+        silent =
+          false,
+      } = {}) => {
         try {
+          if (!silent) {
+            setLoading(
+              true,
+            );
+          }
+
           const response =
             await fetch(
-              `${SERVER_HTTP_URL}/api/wallet`,
+              serverUrl(
+                "/api/wallet",
+              ),
             );
 
           const data =
-            await response.json();
+            await readJson(
+              response,
+            );
 
-          if (
-            !response.ok
-          ) {
+          if (!response.ok) {
             throw new Error(
               data.message ||
-                "Could not load wallet.",
+                `Could not load wallet. Status ${response.status}.`,
             );
           }
 
           setWallet(
-            data.wallet,
+            data.wallet ||
+              data.data ||
+              data ||
+              null,
           );
 
           setError(
             "",
           );
+
+          return data;
         } catch (
           requestError
         ) {
+          console.error(
+            "Wallet load failed:",
+            requestError,
+          );
+
           setError(
-            requestError.message,
+            requestError.message ||
+              "Could not load wallet.",
           );
+
+          return null;
         } finally {
-          setLoading(
-            false,
-          );
+          if (!silent) {
+            setLoading(
+              false,
+            );
+          }
         }
       },
       [],
@@ -81,31 +133,42 @@ export default function useWallet() {
     () => {
       loadWallet();
 
-      /*
-       * Refresh wallet valuation every
-       * five seconds.
-       */
       const timer =
-        setInterval(
-          loadWallet,
-          5000,
+        window.setInterval(
+          () => {
+            loadWallet({
+              silent:
+                true,
+            });
+          },
+          Math.max(
+            Number(
+              refreshMs,
+            ) ||
+              DEFAULT_REFRESH_MS,
+            1000,
+          ),
         );
 
       return () => {
-        clearInterval(
+        window.clearInterval(
           timer,
         );
       };
     },
     [
       loadWallet,
+      refreshMs,
     ],
   );
 
   return {
     wallet,
+
     loading,
+
     error,
+
     loadWallet,
   };
 }

@@ -4,114 +4,227 @@ import {
   useState,
 } from "react";
 
-const SERVER_HTTP_URL =
-  import.meta.env
-    .VITE_SERVER_HTTP_URL ||
-  "http://localhost:5000";
+import {
+  serverUrl,
+} from "../config/server.js";
 
-export default function useServerPerformance() {
+const DEFAULT_REFRESH_MS =
+  30000;
+
+async function readJson(
+  response,
+) {
+  const text =
+    await response.text();
+
+  if (!text) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(
+      text,
+    );
+  } catch {
+    throw new Error(
+      "The performance server returned invalid JSON.",
+    );
+  }
+}
+
+export default function useServerPerformance({
+  refreshMs =
+    DEFAULT_REFRESH_MS,
+} = {}) {
   const [
     summary,
     setSummary,
-  ] = useState(null);
+  ] =
+    useState(
+      null,
+    );
 
   const [
     history,
     setHistory,
-  ] = useState([]);
+  ] =
+    useState(
+      [],
+    );
 
   const [
     loading,
     setLoading,
-  ] = useState(true);
+  ] =
+    useState(
+      true,
+    );
 
   const [
     error,
     setError,
-  ] = useState("");
+  ] =
+    useState(
+      "",
+    );
 
   const loadPerformance =
-    useCallback(async () => {
-      try {
-        setLoading(true);
+    useCallback(
+      async ({
+        silent =
+          false,
+      } = {}) => {
+        try {
+          if (!silent) {
+            setLoading(
+              true,
+            );
+          }
 
-        const [
-          summaryResponse,
-          equityResponse,
-        ] =
-          await Promise.all([
-            fetch(
-              `${SERVER_HTTP_URL}/api/performance/summary`,
-            ),
+          const [
+            summaryResponse,
+            equityResponse,
+          ] =
+            await Promise.all([
+              fetch(
+                serverUrl(
+                  "/api/performance/summary",
+                ),
+              ),
 
-            fetch(
-              `${SERVER_HTTP_URL}/api/performance/equity?limit=500`,
-            ),
-          ]);
+              fetch(
+                serverUrl(
+                  "/api/performance/equity?limit=500",
+                ),
+              ),
+            ]);
 
-        const summaryData =
-          await summaryResponse.json();
+          const [
+            summaryData,
+            equityData,
+          ] =
+            await Promise.all([
+              readJson(
+                summaryResponse,
+              ),
 
-        const equityData =
-          await equityResponse.json();
+              readJson(
+                equityResponse,
+              ),
+            ]);
 
-        if (
-          !summaryResponse.ok
-        ) {
-          throw new Error(
-            summaryData.message ||
-              "Could not load performance summary.",
+          if (
+            !summaryResponse.ok
+          ) {
+            throw new Error(
+              summaryData.message ||
+                `Could not load performance summary. Status ${summaryResponse.status}.`,
+            );
+          }
+
+          if (
+            !equityResponse.ok
+          ) {
+            throw new Error(
+              equityData.message ||
+                `Could not load equity history. Status ${equityResponse.status}.`,
+            );
+          }
+
+          setSummary(
+            summaryData.summary ||
+              summaryData.data ||
+              null,
           );
-        }
 
-        if (
-          !equityResponse.ok
-        ) {
-          throw new Error(
-            equityData.message ||
-              "Could not load equity history.",
+          setHistory(
+            Array.isArray(
+              equityData.history,
+            )
+              ? equityData.history
+              : [],
           );
+
+          setError(
+            "",
+          );
+
+          return {
+            summary:
+              summaryData.summary ||
+              summaryData.data ||
+              null,
+
+            history:
+              Array.isArray(
+                equityData.history,
+              )
+                ? equityData.history
+                : [],
+          };
+        } catch (
+          requestError
+        ) {
+          console.error(
+            "Server performance load failed:",
+            requestError,
+          );
+
+          setError(
+            requestError.message ||
+              "Could not load server performance.",
+          );
+
+          return null;
+        } finally {
+          if (!silent) {
+            setLoading(
+              false,
+            );
+          }
         }
+      },
+      [],
+    );
 
-        setSummary(
-          summaryData.summary,
+  useEffect(
+    () => {
+      loadPerformance();
+
+      const timer =
+        window.setInterval(
+          () => {
+            loadPerformance({
+              silent:
+                true,
+            });
+          },
+          Math.max(
+            Number(
+              refreshMs,
+            ) ||
+              DEFAULT_REFRESH_MS,
+            1000,
+          ),
         );
 
-        setHistory(
-          equityData.history ||
-            [],
+      return () => {
+        window.clearInterval(
+          timer,
         );
-
-        setError("");
-      } catch (
-        requestError
-      ) {
-        setError(
-          requestError.message,
-        );
-      } finally {
-        setLoading(false);
-      }
-    }, []);
-
-  useEffect(() => {
-    loadPerformance();
-
-    const timer =
-      setInterval(
-        loadPerformance,
-        30000,
-      );
-
-    return () =>
-      clearInterval(
-        timer,
-      );
-  }, [loadPerformance]);
+      };
+    },
+    [
+      loadPerformance,
+      refreshMs,
+    ],
+  );
 
   function downloadCsv() {
     window.open(
-      `${SERVER_HTTP_URL}/api/performance/trades.csv`,
+      serverUrl(
+        "/api/performance/trades.csv",
+      ),
       "_blank",
       "noopener,noreferrer",
     );
@@ -119,10 +232,15 @@ export default function useServerPerformance() {
 
   return {
     summary,
+
     history,
+
     loading,
+
     error,
+
     loadPerformance,
+
     downloadCsv,
   };
 }

@@ -2,10 +2,9 @@ import {
   useState,
 } from "react";
 
-const SERVER_HTTP_URL =
-  import.meta.env
-    .VITE_SERVER_HTTP_URL ||
-  "http://localhost:5000";
+import {
+  serverUrl,
+} from "../config/server.js";
 
 const DEFAULT_SYMBOLS = [
   "BTCUSD",
@@ -31,7 +30,9 @@ function formatPrice(
   value,
 ) {
   const number =
-    Number(value);
+    Number(
+      value,
+    );
 
   if (
     !Number.isFinite(
@@ -44,10 +45,16 @@ function formatPrice(
   return number.toLocaleString(
     "en-US",
     {
-      style: "currency",
-      currency: "USD",
+      style:
+        "currency",
+
+      currency:
+        "USD",
+
       maximumFractionDigits:
-        number < 1 ? 6 : 2,
+        number < 1
+          ? 6
+          : 2,
     },
   );
 }
@@ -55,14 +62,19 @@ function formatPrice(
 function getScoreClass(
   score,
 ) {
+  const number =
+    Number(
+      score,
+    );
+
   if (
-    Number(score) > 0
+    number > 0
   ) {
     return "positive";
   }
 
   if (
-    Number(score) < 0
+    number < 0
   ) {
     return "negative";
   }
@@ -77,40 +89,57 @@ function MarketScannerPanel({
   const [
     timeframe,
     setTimeframe,
-  ] = useState("15m");
+  ] =
+    useState(
+      "15m",
+    );
 
   const [
     selectedSymbols,
     setSelectedSymbols,
-  ] = useState(
-    DEFAULT_SYMBOLS,
-  );
+  ] =
+    useState(
+      DEFAULT_SYMBOLS,
+    );
 
   const [
     scan,
     setScan,
-  ] = useState(null);
+  ] =
+    useState(
+      null,
+    );
 
   const [
     loading,
     setLoading,
-  ] = useState(false);
+  ] =
+    useState(
+      false,
+    );
 
   const [
     error,
     setError,
-  ] = useState("");
+  ] =
+    useState(
+      "",
+    );
 
   function toggleSymbol(
     symbol,
   ) {
     setSelectedSymbols(
-      (previous) =>
+      (
+        previous,
+      ) =>
         previous.includes(
           symbol,
         )
           ? previous.filter(
-              (item) =>
+              (
+                item,
+              ) =>
                 item !==
                 symbol,
             )
@@ -129,18 +158,27 @@ function MarketScannerPanel({
       setError(
         "Select at least one market.",
       );
+
       return;
     }
 
-    setLoading(true);
-    setError("");
+    setLoading(
+      true,
+    );
+
+    setError(
+      "",
+    );
 
     try {
       const response =
         await fetch(
-          `${SERVER_HTTP_URL}/api/scanner/run`,
+          serverUrl(
+            "/api/scanner/run",
+          ),
           {
-            method: "POST",
+            method:
+              "POST",
 
             headers: {
               "Content-Type":
@@ -154,40 +192,85 @@ function MarketScannerPanel({
 
                 timeframe,
 
-                limit: 300,
+                limit:
+                  300,
               }),
           },
         );
 
-      const data =
-        await response.json();
+      const text =
+        await response.text();
 
-      if (!response.ok) {
+      let data =
+        {};
+
+      if (
+        text
+      ) {
+        try {
+          data =
+            JSON.parse(
+              text,
+            );
+        } catch {
+          throw new Error(
+            "The scanner server returned invalid JSON.",
+          );
+        }
+      }
+
+      if (
+        !response.ok
+      ) {
         throw new Error(
           data.message ||
-            "The market scan failed.",
+            `The market scan failed with status ${response.status}.`,
         );
       }
 
-      setScan(data.scan);
+      const nextScan =
+        data.scan ||
+        data.data ||
+        data;
+
+      setScan(
+        nextScan,
+      );
     } catch (
       requestError
     ) {
       setError(
-        requestError.message,
+        requestError.message ||
+          "The market scan failed.",
       );
     } finally {
-      setLoading(false);
+      setLoading(
+        false,
+      );
     }
   }
 
+  const opportunities =
+    Array.isArray(
+      scan?.opportunities,
+    )
+      ? scan.opportunities
+      : [];
+
+  const scanErrors =
+    Array.isArray(
+      scan?.errors,
+    )
+      ? scan.errors
+      : [];
+
   return (
-    <section className="panel scanner-panel">
-      <div className="panel-header">
+    <section className="panel-card scanner-panel">
+      <div className="panel-heading">
         <div>
-          <p className="panel-eyebrow">
+          <span className="eyebrow">
             CROSS-MARKET RANKING
-          </p>
+          </span>
 
           <h2>
             Opportunity Scanner
@@ -195,21 +278,33 @@ function MarketScannerPanel({
         </div>
 
         <label className="scanner-timeframe">
-          <span>Timeframe</span>
+          <span>
+            Timeframe
+          </span>
 
           <select
-            value={timeframe}
-            onChange={(event) =>
+            value={
+              timeframe
+            }
+            onChange={(
+              event,
+            ) =>
               setTimeframe(
                 event.target.value,
               )
             }
           >
             {TIMEFRAMES.map(
-              (item) => (
+              (
+                item,
+              ) => (
                 <option
-                  value={item}
-                  key={item}
+                  value={
+                    item
+                  }
+                  key={
+                    item
+                  }
                 >
                   {item}
                 </option>
@@ -221,10 +316,14 @@ function MarketScannerPanel({
 
       <div className="scanner-symbols">
         {DEFAULT_SYMBOLS.map(
-          (symbol) => (
+          (
+            symbol,
+          ) => (
             <button
               type="button"
-              key={symbol}
+              key={
+                symbol
+              }
               className={
                 selectedSymbols.includes(
                   symbol,
@@ -250,8 +349,12 @@ function MarketScannerPanel({
       <button
         type="button"
         className="run-scanner-button"
-        disabled={loading}
-        onClick={runScanner}
+        disabled={
+          loading
+        }
+        onClick={
+          runScanner
+        }
       >
         {loading
           ? "Scanning markets…"
@@ -273,120 +376,178 @@ function MarketScannerPanel({
 
             <span>
               {
-                scan.opportunities
-                  .length
+                opportunities.length
               }{" "}
               markets ·{" "}
-              {scan.timeframe}
+              {scan.timeframe ||
+                timeframe}
             </span>
           </div>
 
           <div className="scanner-table">
             <div className="scanner-row scanner-header">
-              <span>Rank</span>
-              <span>Market</span>
-              <span>Price</span>
-              <span>Action</span>
-              <span>Score</span>
-              <span>Confidence</span>
-              <span>Regime</span>
+              <span>
+                Rank
+              </span>
+
+              <span>
+                Market
+              </span>
+
+              <span>
+                Price
+              </span>
+
+              <span>
+                Action
+              </span>
+
+              <span>
+                Score
+              </span>
+
+              <span>
+                Confidence
+              </span>
+
+              <span>
+                Regime
+              </span>
+
               <span />
             </div>
 
-            {scan.opportunities.map(
+            {opportunities.map(
               (
                 opportunity,
                 index,
-              ) => (
-                <div
-                  className={
-                    opportunity.symbol ===
-                    activeSymbol
-                      ? "scanner-row active-market"
-                      : "scanner-row"
-                  }
-                  key={
-                    opportunity.symbol
-                  }
-                >
-                  <strong>
-                    {index + 1}
-                  </strong>
+              ) => {
+                const score =
+                  Number(
+                    opportunity.score,
+                  );
 
-                  <strong>
-                    {
-                      opportunity.symbol
+                const confidence =
+                  Number(
+                    opportunity.confidence,
+                  );
+
+                return (
+                  <div
+                    className={
+                      opportunity.symbol ===
+                      activeSymbol
+                        ? "scanner-row active-market"
+                        : "scanner-row"
                     }
-                  </strong>
-
-                  <span>
-                    {formatPrice(
-                      opportunity.price,
-                    )}
-                  </span>
-
-                  <span
-                    className={`signal-action ${opportunity.signal?.className}`}
+                    key={
+                      opportunity.symbol ||
+                      index
+                    }
                   >
-                    {
-                      opportunity.action
-                    }
-                  </span>
+                    <strong>
+                      {index +
+                        1}
+                    </strong>
 
-                  <strong
-                    className={getScoreClass(
-                      opportunity.score,
-                    )}
-                  >
-                    {opportunity.score >
-                    0
-                      ? "+"
-                      : ""}
-                    {
-                      opportunity.score
-                    }
-                  </strong>
+                    <strong>
+                      {
+                        opportunity.symbol
+                      }
+                    </strong>
 
-                  <span>
-                    {
-                      opportunity.confidence
-                    }
-                    %
-                  </span>
+                    <span>
+                      {formatPrice(
+                        opportunity.price,
+                      )}
+                    </span>
 
-                  <span>
-                    {opportunity.regime
-                      ?.label ||
-                      "—"}
-                  </span>
+                    <span
+                      className={`signal-action ${
+                        opportunity
+                          .signal
+                          ?.className ||
+                        ""
+                      }`}
+                    >
+                      {opportunity.action ||
+                        "WAIT"}
+                    </span>
 
-                  <button
-                    type="button"
-                    className="scanner-open-button"
-                    onClick={() =>
-                      onSelectSymbol?.(
-                        opportunity.symbol,
+                    <strong
+                      className={
+                        getScoreClass(
+                          score,
+                        )
+                      }
+                    >
+                      {Number.isFinite(
+                        score,
+                      ) &&
+                      score >
+                        0
+                        ? "+"
+                        : ""}
+
+                      {Number.isFinite(
+                        score,
                       )
-                    }
-                  >
-                    Open
-                  </button>
-                </div>
-              ),
+                        ? score
+                        : "—"}
+                    </strong>
+
+                    <span>
+                      {Number.isFinite(
+                        confidence,
+                      )
+                        ? confidence
+                        : "—"}
+                      {Number.isFinite(
+                        confidence,
+                      )
+                        ? "%"
+                        : ""}
+                    </span>
+
+                    <span>
+                      {opportunity.regime
+                        ?.label ||
+                        "—"}
+                    </span>
+
+                    <button
+                      type="button"
+                      className="scanner-open-button"
+                      onClick={() =>
+                        onSelectSymbol?.(
+                          opportunity.symbol,
+                        )
+                      }
+                    >
+                      Open
+                    </button>
+                  </div>
+                );
+              },
             )}
           </div>
 
-          {scan.errors.length >
+          {scanErrors.length >
             0 && (
             <p className="scanner-warning">
               Some markets could not
               be scanned:{" "}
-              {scan.errors
+              {scanErrors
                 .map(
-                  (item) =>
-                    item.symbol,
+                  (
+                    item,
+                  ) =>
+                    item.symbol ||
+                    "Unknown",
                 )
-                .join(", ")}
+                .join(
+                  ", ",
+                )}
             </p>
           )}
         </>

@@ -2,48 +2,83 @@ import {
   useState,
 } from "react";
 
-const SERVER_HTTP_URL =
-  import.meta.env
-    .VITE_SERVER_HTTP_URL ||
-  "http://localhost:5000";
+import {
+  serverUrl,
+} from "../config/server.js";
 
-function formatMoney(value) {
-  const number = Number(value);
+function formatMoney(
+  value,
+) {
+  const number =
+    Number(
+      value,
+    );
 
-  if (!Number.isFinite(number)) {
+  if (
+    !Number.isFinite(
+      number,
+    )
+  ) {
     return "—";
   }
 
   return number.toLocaleString(
     "en-US",
     {
-      style: "currency",
-      currency: "USD",
-      maximumFractionDigits: 2,
+      style:
+        "currency",
+
+      currency:
+        "USD",
+
+      maximumFractionDigits:
+        2,
     },
   );
 }
 
-function formatPercent(value) {
-  const number = Number(value);
+function formatPercent(
+  value,
+) {
+  const number =
+    Number(
+      value,
+    );
 
-  if (!Number.isFinite(number)) {
+  if (
+    !Number.isFinite(
+      number,
+    )
+  ) {
     return "—";
   }
 
   return `${
-    number >= 0 ? "+" : ""
-  }${number.toFixed(2)}%`;
+    number >= 0
+      ? "+"
+      : ""
+  }${number.toFixed(
+    2,
+  )}%`;
 }
 
-function getClass(value) {
-  const number = Number(value);
+function getClass(
+  value,
+) {
+  const number =
+    Number(
+      value,
+    );
 
-  if (number > 0) {
+  if (
+    number > 0
+  ) {
     return "positive";
   }
 
-  if (number < 0) {
+  if (
+    number < 0
+  ) {
     return "negative";
   }
 
@@ -51,135 +86,207 @@ function getClass(value) {
 }
 
 function BacktestPanel({
-  symbol = "SOLUSD",
-  timeframe = "15m",
+  symbol =
+    "SOLUSD",
+
+  timeframe =
+    "15m",
 }) {
   const [
     settings,
     setSettings,
-  ] = useState({
-    startingCash: 10000,
-    buyAmount: 500,
-    minimumConfidence: 60,
-    stopLossPercent: 2,
-    takeProfitPercent: 4,
-    feePercent: 0.1,
-    limit: 1000,
-  });
+  ] =
+    useState({
+      startingCash:
+        300,
+
+      buyAmount:
+        50,
+
+      minimumConfidence:
+        60,
+
+      stopLossPercent:
+        2,
+
+      takeProfitPercent:
+        4,
+
+      feePercent:
+        0.1,
+
+      limit:
+        1000,
+    });
 
   const [
     result,
     setResult,
-  ] = useState(null);
+  ] =
+    useState(
+      null,
+    );
 
   const [
     loading,
     setLoading,
-  ] = useState(false);
+  ] =
+    useState(
+      false,
+    );
 
   const [
     error,
     setError,
-  ] = useState("");
+  ] =
+    useState(
+      "",
+    );
 
   function updateSetting(
     name,
     value,
   ) {
     setSettings(
-      (previous) => ({
+      (
+        previous,
+      ) => ({
         ...previous,
-        [name]: value,
+
+        [name]:
+          value,
       }),
     );
   }
 
   async function runBacktest() {
-    setLoading(true);
-    setError("");
+    setLoading(
+      true,
+    );
+
+    setError(
+      "",
+    );
 
     try {
       const response =
         await fetch(
-          `${SERVER_HTTP_URL}/api/backtests/run`,
+          serverUrl(
+            "/api/backtests/run",
+          ),
           {
-            method: "POST",
+            method:
+              "POST",
 
             headers: {
               "Content-Type":
                 "application/json",
             },
 
-            body: JSON.stringify({
-              symbol,
-              timeframe,
-              limit:
-                Number(
-                  settings.limit,
-                ),
+            body:
+              JSON.stringify({
+                symbol,
 
-              startingCash:
-                Number(
-                  settings.startingCash,
-                ),
+                timeframe,
 
-              buyAmount:
-                Number(
-                  settings.buyAmount,
-                ),
+                limit:
+                  Number(
+                    settings.limit,
+                  ),
 
-              minimumConfidence:
-                Number(
-                  settings.minimumConfidence,
-                ),
+                startingCash:
+                  Number(
+                    settings.startingCash,
+                  ),
 
-              stopLossPercent:
-                Number(
-                  settings.stopLossPercent,
-                ),
+                buyAmount:
+                  Number(
+                    settings.buyAmount,
+                  ),
 
-              takeProfitPercent:
-                Number(
-                  settings.takeProfitPercent,
-                ),
+                minimumConfidence:
+                  Number(
+                    settings.minimumConfidence,
+                  ),
 
-              feeRate:
-                Number(
-                  settings.feePercent,
-                ) / 100,
-            }),
+                stopLossPercent:
+                  Number(
+                    settings.stopLossPercent,
+                  ),
+
+                takeProfitPercent:
+                  Number(
+                    settings.takeProfitPercent,
+                  ),
+
+                feeRate:
+                  Number(
+                    settings.feePercent,
+                  ) /
+                  100,
+              }),
           },
         );
 
-      const data =
-        await response.json();
+      const text =
+        await response.text();
 
-      if (!response.ok) {
+      let data =
+        {};
+
+      if (
+        text
+      ) {
+        try {
+          data =
+            JSON.parse(
+              text,
+            );
+        } catch {
+          throw new Error(
+            "The backtest server returned invalid JSON.",
+          );
+        }
+      }
+
+      if (
+        !response.ok
+      ) {
         throw new Error(
           data.message ||
-            "The backtest failed.",
+            `The backtest failed with status ${response.status}.`,
         );
       }
 
+      const nextResult =
+        data.result ||
+        data.data ||
+        data;
+
       setResult(
-        data.result,
+        nextResult,
       );
-    } catch (requestError) {
+    } catch (
+      requestError
+    ) {
       setError(
-        requestError.message,
+        requestError.message ||
+          "The backtest failed.",
       );
     } finally {
-      setLoading(false);
+      setLoading(
+        false,
+      );
     }
   }
 
   return (
-    <section className="panel backtest-panel">
-      <div className="panel-header">
+    <section className="panel-card backtest-panel">
+      <div className="panel-heading">
         <div>
-          <p className="panel-eyebrow">
+          <span className="eyebrow">
             SERVER-SIDE VALIDATION
-          </p>
+          </span>
 
           <h2>
             Strategy 2.0 Backtester
@@ -191,20 +298,27 @@ function BacktestPanel({
             "USD",
             "/USD",
           )}{" "}
-          · {timeframe}
+          ·{" "}
+          {timeframe}
         </span>
       </div>
 
       <div className="backtest-settings">
         <label>
-          <span>Starting cash</span>
+          <span>
+            Starting cash
+          </span>
 
           <input
             type="number"
+            min="1"
+            step="1"
             value={
               settings.startingCash
             }
-            onChange={(event) =>
+            onChange={(
+              event,
+            ) =>
               updateSetting(
                 "startingCash",
                 event.target.value,
@@ -214,14 +328,20 @@ function BacktestPanel({
         </label>
 
         <label>
-          <span>Buy amount</span>
+          <span>
+            Buy amount
+          </span>
 
           <input
             type="number"
+            min="1"
+            step="1"
             value={
               settings.buyAmount
             }
-            onChange={(event) =>
+            onChange={(
+              event,
+            ) =>
               updateSetting(
                 "buyAmount",
                 event.target.value,
@@ -231,16 +351,21 @@ function BacktestPanel({
         </label>
 
         <label>
-          <span>Min confidence</span>
+          <span>
+            Min confidence
+          </span>
 
           <input
             type="number"
             min="0"
             max="100"
+            step="1"
             value={
               settings.minimumConfidence
             }
-            onChange={(event) =>
+            onChange={(
+              event,
+            ) =>
               updateSetting(
                 "minimumConfidence",
                 event.target.value,
@@ -250,15 +375,20 @@ function BacktestPanel({
         </label>
 
         <label>
-          <span>Stop loss %</span>
+          <span>
+            Stop loss %
+          </span>
 
           <input
             type="number"
+            min="0"
             step="0.1"
             value={
               settings.stopLossPercent
             }
-            onChange={(event) =>
+            onChange={(
+              event,
+            ) =>
               updateSetting(
                 "stopLossPercent",
                 event.target.value,
@@ -268,15 +398,20 @@ function BacktestPanel({
         </label>
 
         <label>
-          <span>Take profit %</span>
+          <span>
+            Take profit %
+          </span>
 
           <input
             type="number"
+            min="0"
             step="0.1"
             value={
               settings.takeProfitPercent
             }
-            onChange={(event) =>
+            onChange={(
+              event,
+            ) =>
               updateSetting(
                 "takeProfitPercent",
                 event.target.value,
@@ -286,15 +421,20 @@ function BacktestPanel({
         </label>
 
         <label>
-          <span>Fee %</span>
+          <span>
+            Fee %
+          </span>
 
           <input
             type="number"
+            min="0"
             step="0.01"
             value={
               settings.feePercent
             }
-            onChange={(event) =>
+            onChange={(
+              event,
+            ) =>
               updateSetting(
                 "feePercent",
                 event.target.value,
@@ -304,16 +444,21 @@ function BacktestPanel({
         </label>
 
         <label>
-          <span>Candles</span>
+          <span>
+            Candles
+          </span>
 
           <input
             type="number"
             min="250"
             max="1000"
+            step="50"
             value={
               settings.limit
             }
-            onChange={(event) =>
+            onChange={(
+              event,
+            ) =>
               updateSetting(
                 "limit",
                 event.target.value,
@@ -326,8 +471,12 @@ function BacktestPanel({
       <button
         type="button"
         className="run-backtest-button"
-        disabled={loading}
-        onClick={runBacktest}
+        disabled={
+          loading
+        }
+        onClick={
+          runBacktest
+        }
       >
         {loading
           ? "Running server backtest…"
@@ -344,7 +493,10 @@ function BacktestPanel({
         <>
           <div className="backtest-summary">
             <article>
-              <span>Ending equity</span>
+              <span>
+                Ending equity
+              </span>
+
               <strong>
                 {formatMoney(
                   result.endingEquity,
@@ -353,11 +505,16 @@ function BacktestPanel({
             </article>
 
             <article>
-              <span>Total profit</span>
+              <span>
+                Total profit
+              </span>
+
               <strong
-                className={getClass(
-                  result.totalProfit,
-                )}
+                className={
+                  getClass(
+                    result.totalProfit,
+                  )
+                }
               >
                 {formatMoney(
                   result.totalProfit,
@@ -366,11 +523,16 @@ function BacktestPanel({
             </article>
 
             <article>
-              <span>Total return</span>
+              <span>
+                Total return
+              </span>
+
               <strong
-                className={getClass(
-                  result.totalReturnPercent,
-                )}
+                className={
+                  getClass(
+                    result.totalReturnPercent,
+                  )
+                }
               >
                 {formatPercent(
                   result.totalReturnPercent,
@@ -379,48 +541,90 @@ function BacktestPanel({
             </article>
 
             <article>
-              <span>Win rate</span>
+              <span>
+                Win rate
+              </span>
+
               <strong>
-                {Number(
-                  result.winRate,
-                ).toFixed(2)}
+                {Number.isFinite(
+                  Number(
+                    result.winRate,
+                  ),
+                )
+                  ? Number(
+                      result.winRate,
+                    ).toFixed(
+                      2,
+                    )
+                  : "0.00"}
                 %
               </strong>
             </article>
 
             <article>
-              <span>Profit factor</span>
+              <span>
+                Profit factor
+              </span>
+
               <strong>
                 {result.profitFactor ===
                 null
                   ? "∞"
-                  : Number(
-                      result.profitFactor,
-                    ).toFixed(2)}
+                  : Number.isFinite(
+                        Number(
+                          result.profitFactor,
+                        ),
+                      )
+                    ? Number(
+                        result.profitFactor,
+                      ).toFixed(
+                        2,
+                      )
+                    : "—"}
               </strong>
             </article>
 
             <article>
-              <span>Max drawdown</span>
-              <strong className="negative">
-                {Number(
-                  result.maximumDrawdownPercent,
-                ).toFixed(2)}
+              <span>
+                Max drawdown
+              </span>
+
+              <strong
+                className="negative"
+              >
+                {Number.isFinite(
+                  Number(
+                    result.maximumDrawdownPercent,
+                  ),
+                )
+                  ? Number(
+                      result.maximumDrawdownPercent,
+                    ).toFixed(
+                      2,
+                    )
+                  : "0.00"}
                 %
               </strong>
             </article>
 
             <article>
-              <span>Closed trades</span>
+              <span>
+                Closed trades
+              </span>
+
               <strong>
-                {
-                  result.closedTradeCount
-                }
+                {Number(
+                  result.closedTradeCount ||
+                    0,
+                )}
               </strong>
             </article>
 
             <article>
-              <span>Fees</span>
+              <span>
+                Fees
+              </span>
+
               <strong>
                 {formatMoney(
                   result.totalFees,
@@ -430,10 +634,23 @@ function BacktestPanel({
           </div>
 
           <p className="backtest-description">
-            Saved to Firestore as backtest{" "}
-            <strong>{result.id}</strong>.
-            Tested {result.candleCount} candles
-            with Strategy Engine 2.0.
+            {result.id ? (
+              <>
+                Saved as backtest{" "}
+                <strong>
+                  {result.id}
+                </strong>
+                .{" "}
+              </>
+            ) : null}
+
+            Tested{" "}
+            {Number(
+              result.candleCount ||
+                0,
+            )}{" "}
+            candles with Strategy
+            Engine 2.0.
           </p>
         </>
       )}
