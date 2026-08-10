@@ -879,7 +879,7 @@ export async function resetPaperPortfolio({
         database
           .prepare(
             `
-              DELETE FROM order_executions
+              DELETE FROM executed_orders
             `,
           )
           .run();
