@@ -5,7 +5,7 @@ import {
 } from "../config/database.js";
 
 const DEFAULT_STARTING_CASH =
-  10000;
+  300;
 
 const DEFAULT_FEE_RATE =
   0.001;
