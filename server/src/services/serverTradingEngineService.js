@@ -1396,9 +1396,16 @@ export class ServerTradingEngineService {
               message:
                 result.message,
 
+              /*
+               * FIX:
+               *
+               * A duplicate historical result
+               * is not a new execution.
+               */
               executed:
                 Boolean(
-                  result.success,
+                  result.success &&
+                  !result.duplicate,
                 ),
 
               quantity,
@@ -1554,9 +1561,16 @@ export class ServerTradingEngineService {
               message:
                 result.message,
 
+              /*
+               * FIX:
+               *
+               * Do not report an old duplicate
+               * order as a fresh SELL.
+               */
               executed:
                 Boolean(
-                  result.success,
+                  result.success &&
+                  !result.duplicate,
                 ),
 
               quantity,
@@ -1902,9 +1916,16 @@ export class ServerTradingEngineService {
 
           quantity,
 
+          /*
+           * FIX:
+           *
+           * A duplicate risk order is not
+           * a new executed exit.
+           */
           executed:
             Boolean(
-              result.success,
+              result.success &&
+              !result.duplicate,
             ),
 
           orderKey:

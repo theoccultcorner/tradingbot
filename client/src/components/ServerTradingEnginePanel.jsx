@@ -9,10 +9,10 @@ const DEFAULT_SETTINGS = {
   emergencyStop: false,
 
   minimumBuyScore: 40,
-  minimumBuyConfidence: 45,
+  minimumBuyConfidence: 60,
 
   minimumSellScore: 40,
-  minimumSellConfidence: 45,
+  minimumSellConfidence: 60,
 
   buyAmount: 40,
   maximumPositionValue: 120,

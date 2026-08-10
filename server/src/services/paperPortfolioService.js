@@ -1,5 +1,3 @@
-import crypto from "node:crypto";
-
 import {
   database,
 } from "../config/database.js";
@@ -14,7 +12,7 @@ function round(
   value,
   decimals = 8,
 ) {
-  const multiplier =
+  const factor =
     10 ** decimals;
 
   return (
@@ -23,9 +21,9 @@ function round(
         Number(value) +
         Number.EPSILON
       ) *
-        multiplier,
+        factor,
     ) /
-    multiplier
+    factor
   );
 }
 
@@ -37,15 +35,17 @@ function normalizeSymbol(
       symbol || "",
     )
       .trim()
-      .toUpperCase();
+      .toUpperCase()
+      .replace(
+        /[^A-Z0-9]/g,
+        "",
+      );
 
   if (
-    !/^[A-Z0-9]{5,20}$/.test(
-      normalized,
-    )
+    !normalized
   ) {
     throw new Error(
-      "A valid trading symbol is required.",
+      "A valid symbol is required.",
     );
   }
 
@@ -63,12 +63,10 @@ function normalizeSide(
       .toUpperCase();
 
   if (
-    ![
-      "BUY",
-      "SELL",
-    ].includes(
-      normalized,
-    )
+    normalized !==
+      "BUY" &&
+    normalized !==
+      "SELL"
   ) {
     throw new Error(
       "Order side must be BUY or SELL.",
@@ -78,11 +76,8 @@ function normalizeSide(
   return normalized;
 }
 
-function ensurePortfolioRow(
-  startingCash =
-    DEFAULT_STARTING_CASH,
-) {
-  const existing =
+function ensurePortfolioRow() {
+  let row =
     database
       .prepare(
         `
@@ -95,58 +90,49 @@ function ensurePortfolioRow(
         "paper",
       );
 
-  if (existing) {
-    return existing;
+  if (
+    !row
+  ) {
+    database
+      .prepare(
+        `
+          INSERT INTO portfolio (
+            id,
+            starting_cash,
+            cash,
+            realized_profit,
+            fee_rate,
+            updated_at
+          )
+          VALUES (
+            ?, ?, ?, ?, ?, ?
+          )
+        `,
+      )
+      .run(
+        "paper",
+        DEFAULT_STARTING_CASH,
+        DEFAULT_STARTING_CASH,
+        0,
+        DEFAULT_FEE_RATE,
+        Date.now(),
+      );
+
+    row =
+      database
+        .prepare(
+          `
+            SELECT *
+            FROM portfolio
+            WHERE id = ?
+          `,
+        )
+        .get(
+          "paper",
+        );
   }
 
-  const safeCash =
-    Number.isFinite(
-      Number(
-        startingCash,
-      ),
-    ) &&
-    Number(
-      startingCash,
-    ) > 0
-      ? Number(
-          startingCash,
-        )
-      : DEFAULT_STARTING_CASH;
-
-  database
-    .prepare(
-      `
-        INSERT INTO portfolio (
-          id,
-          starting_cash,
-          cash,
-          realized_profit,
-          fee_rate,
-          updated_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?)
-      `,
-    )
-    .run(
-      "paper",
-      safeCash,
-      safeCash,
-      0,
-      DEFAULT_FEE_RATE,
-      Date.now(),
-    );
-
-  return database
-    .prepare(
-      `
-        SELECT *
-        FROM portfolio
-        WHERE id = ?
-      `,
-    )
-    .get(
-      "paper",
-    );
+  return row;
 }
 
 function loadPositions() {
@@ -156,7 +142,7 @@ function loadPositions() {
         `
           SELECT *
           FROM positions
-          ORDER BY symbol
+          ORDER BY symbol ASC
         `,
       )
       .all();
@@ -183,6 +169,11 @@ function loadPositions() {
       totalCost:
         Number(
           row.total_cost,
+        ),
+
+      updatedAt:
+        Number(
+          row.updated_at,
         ),
     };
   }
@@ -219,7 +210,9 @@ function loadTrades(
       );
 
   return rows.map(
-    (row) => ({
+    (
+      row,
+    ) => ({
       id:
         row.id,
 
@@ -435,6 +428,11 @@ const executePaperOrderTransaction =
           ?.source ||
         "MANUAL";
 
+      /*
+       * =====================================================
+       * BUY
+       * =====================================================
+       */
       if (
         normalizedSide ===
         "BUY"
@@ -467,27 +465,34 @@ const executePaperOrderTransaction =
               .averageEntryPrice
           );
 
-        const newQuantity =
-          previousQuantity +
-          numericQuantity;
-
+        /*
+         * Include the BUY fee in the cost
+         * basis.
+         *
+         * This makes later realized P/L
+         * reflect the actual cost of entering
+         * the position.
+         */
         const newCost =
           previousCost +
           grossValue +
           fee;
 
+        const newQuantity =
+          previousQuantity +
+          numericQuantity;
+
         const newAverageEntryPrice =
-          newCost /
-          newQuantity;
+          newQuantity > 0
+            ? newCost /
+              newQuantity
+            : numericPrice;
 
         const nextCash =
-          round(
-            Number(
-              portfolio.cash,
-            ) -
-              totalDebit,
-            2,
-          );
+          Number(
+            portfolio.cash,
+          ) -
+          totalDebit;
 
         database
           .prepare(
@@ -500,8 +505,13 @@ const executePaperOrderTransaction =
             `,
           )
           .run(
-            nextCash,
+            round(
+              nextCash,
+              2,
+            ),
+
             timestamp,
+
             "paper",
           );
 
@@ -515,32 +525,41 @@ const executePaperOrderTransaction =
                 total_cost,
                 updated_at
               )
-              VALUES (?, ?, ?, ?, ?)
+              VALUES (
+                ?, ?, ?, ?, ?
+              )
 
               ON CONFLICT(symbol)
               DO UPDATE SET
                 quantity =
                   excluded.quantity,
+
                 average_entry_price =
                   excluded.average_entry_price,
+
                 total_cost =
                   excluded.total_cost,
+
                 updated_at =
                   excluded.updated_at
             `,
           )
           .run(
             normalizedSymbol,
+
             round(
               newQuantity,
             ),
+
             round(
               newAverageEntryPrice,
             ),
+
             round(
               newCost,
               2,
             ),
+
             timestamp,
           );
 
@@ -568,15 +587,25 @@ const executePaperOrderTransaction =
           )
           .run(
             tradeId,
+
             normalizedSymbol,
+
             timeframe,
+
             "BUY",
+
             numericQuantity,
+
             numericPrice,
+
             grossValue,
+
             fee,
+
             0,
+
             source,
+
             timestamp,
           );
 
@@ -618,30 +647,72 @@ const executePaperOrderTransaction =
         };
       }
 
+      /*
+       * =====================================================
+       * SELL
+       * =====================================================
+       */
+
       const ownedQuantity =
         currentPosition
           .quantity;
 
       if (
-        numericQuantity >
-        ownedQuantity +
-          0.000000001
+        ownedQuantity <=
+        0
       ) {
         throw new Error(
-          `You only own ${ownedQuantity} ${normalizedSymbol}.`,
+          `No ${normalizedSymbol} position is available to sell.`,
         );
       }
 
+      /*
+       * Small tolerance protects against
+       * floating-point differences when the
+       * bot attempts to close the full
+       * position.
+       */
+      if (
+        numericQuantity >
+        ownedQuantity +
+          0.00000001
+      ) {
+        throw new Error(
+          `Cannot sell ${numericQuantity} ${normalizedSymbol}. ` +
+            `Only ${ownedQuantity} is available.`,
+        );
+      }
+
+      const actualSellQuantity =
+        Math.min(
+          numericQuantity,
+          ownedQuantity,
+        );
+
+      const actualGrossValue =
+        actualSellQuantity *
+        numericPrice;
+
+      const actualFee =
+        actualGrossValue *
+        feeRate;
+
       const netProceeds =
-        grossValue -
-        fee;
+        actualGrossValue -
+        actualFee;
 
       const averageEntryPrice =
         currentPosition
           .averageEntryPrice;
 
+      /*
+       * averageEntryPrice already includes
+       * the proportional BUY-side fee
+       * because BUY cost basis includes the
+       * entry fee.
+       */
       const costBasis =
-        numericQuantity *
+        actualSellQuantity *
         averageEntryPrice;
 
       const realizedProfit =
@@ -650,26 +721,20 @@ const executePaperOrderTransaction =
 
       const remainingQuantity =
         ownedQuantity -
-        numericQuantity;
+        actualSellQuantity;
 
       const nextCash =
-        round(
-          Number(
-            portfolio.cash,
-          ) +
-            netProceeds,
-          2,
-        );
+        Number(
+          portfolio.cash,
+        ) +
+        netProceeds;
 
       const nextRealizedProfit =
-        round(
-          Number(
-            portfolio
-              .realized_profit,
-          ) +
-            realizedProfit,
-          2,
-        );
+        Number(
+          portfolio
+            .realized_profit,
+        ) +
+        realizedProfit;
 
       database
         .prepare(
@@ -683,9 +748,18 @@ const executePaperOrderTransaction =
           `,
         )
         .run(
-          nextCash,
-          nextRealizedProfit,
+          round(
+            nextCash,
+            2,
+          ),
+
+          round(
+            nextRealizedProfit,
+            8,
+          ),
+
           timestamp,
+
           "paper",
         );
 
@@ -704,6 +778,15 @@ const executePaperOrderTransaction =
             normalizedSymbol,
           );
       } else {
+        /*
+         * Remaining cost basis must shrink
+         * proportionally with the remaining
+         * quantity.
+         */
+        const remainingCost =
+          remainingQuantity *
+          averageEntryPrice;
+
         database
           .prepare(
             `
@@ -721,8 +804,7 @@ const executePaperOrderTransaction =
             ),
 
             round(
-              remainingQuantity *
-                averageEntryPrice,
+              remainingCost,
               2,
             ),
 
@@ -756,15 +838,25 @@ const executePaperOrderTransaction =
         )
         .run(
           tradeId,
+
           normalizedSymbol,
+
           timeframe,
+
           "SELL",
-          numericQuantity,
+
+          actualSellQuantity,
+
           numericPrice,
-          grossValue,
-          fee,
+
+          actualGrossValue,
+
+          actualFee,
+
           realizedProfit,
+
           source,
+
           timestamp,
         );
 
@@ -782,14 +874,16 @@ const executePaperOrderTransaction =
             "SELL",
 
           quantity:
-            numericQuantity,
+            actualSellQuantity,
 
           price:
             numericPrice,
 
-          grossValue,
+          grossValue:
+            actualGrossValue,
 
-          fee,
+          fee:
+            actualFee,
 
           realizedProfit,
 
@@ -799,7 +893,7 @@ const executePaperOrderTransaction =
         },
 
         message:
-          `Sold ${numericQuantity} ${normalizedSymbol} at $${numericPrice.toFixed(
+          `Sold ${actualSellQuantity} ${normalizedSymbol} at $${numericPrice.toFixed(
             4,
           )}.`,
       };
@@ -813,6 +907,19 @@ export async function placePaperOrder({
   price,
   metadata = {},
 }) {
+  /*
+   * This transaction is authoritative.
+   *
+   * BUY:
+   * - subtracts cash
+   * - creates/updates crypto holdings
+   * - records trade
+   *
+   * SELL:
+   * - adds cash
+   * - reduces/removes holdings
+   * - records realized P/L
+   */
   const result =
     executePaperOrderTransaction({
       symbol,
@@ -822,6 +929,13 @@ export async function placePaperOrder({
       metadata,
     });
 
+  /*
+   * Read the portfolio AFTER the SQLite
+   * transaction completes.
+   *
+   * This means the caller receives the
+   * actual post-trade balance and holdings.
+   */
   const portfolio =
     await getPaperPortfolio();
 
@@ -857,6 +971,24 @@ export async function resetPaperPortfolio({
       ? numericStartingCash
       : DEFAULT_STARTING_CASH;
 
+  /*
+   * =====================================================
+   * IMPORTANT RESET FIX
+   * =====================================================
+   *
+   * Reset all portfolio state AND clear the
+   * idempotency records used by
+   * idempotentOrderService.js.
+   *
+   * Without clearing order_executions, an
+   * old order can be returned as:
+   *
+   * success: true
+   * duplicate: true
+   *
+   * even though no new portfolio transaction
+   * took place.
+   */
   const reset =
     database.transaction(
       () => {
@@ -876,13 +1008,51 @@ export async function resetPaperPortfolio({
           )
           .run();
 
+        /*
+         * This is the table actually used by
+         * executeIdempotentPaperOrder().
+         */
         database
           .prepare(
             `
-              DELETE FROM executed_orders
+              DELETE FROM order_executions
             `,
           )
           .run();
+
+        /*
+         * Keep this for compatibility with
+         * the older execution table defined
+         * in database.js.
+         *
+         * If the table exists, clear it too.
+         */
+        const legacyTable =
+          database
+            .prepare(
+              `
+                SELECT name
+                FROM sqlite_master
+                WHERE
+                  type = 'table'
+                  AND name = ?
+              `,
+            )
+            .get(
+              "executed_orders",
+            );
+
+        if (
+          legacyTable
+        ) {
+          database
+            .prepare(
+              `
+                DELETE FROM executed_orders
+              `,
+            )
+            .run();
+        }
 
         database
           .prepare(
@@ -899,11 +1069,66 @@ export async function resetPaperPortfolio({
           )
           .run(
             safeCash,
+
             safeCash,
+
             DEFAULT_FEE_RATE,
+
             Date.now(),
+
             "paper",
           );
+
+        /*
+         * Defensive fallback in case the
+         * portfolio row was somehow removed.
+         */
+        const updatedPortfolio =
+          database
+            .prepare(
+              `
+                SELECT id
+                FROM portfolio
+                WHERE id = ?
+              `,
+            )
+            .get(
+              "paper",
+            );
+
+        if (
+          !updatedPortfolio
+        ) {
+          database
+            .prepare(
+              `
+                INSERT INTO portfolio (
+                  id,
+                  starting_cash,
+                  cash,
+                  realized_profit,
+                  fee_rate,
+                  updated_at
+                )
+                VALUES (
+                  ?, ?, ?, ?, ?, ?
+                )
+              `,
+            )
+            .run(
+              "paper",
+
+              safeCash,
+
+              safeCash,
+
+              0,
+
+              DEFAULT_FEE_RATE,
+
+              Date.now(),
+            );
+        }
       },
     );
 
