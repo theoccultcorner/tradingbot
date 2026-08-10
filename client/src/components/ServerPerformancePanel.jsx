@@ -70,6 +70,30 @@ function formatNumber(
   );
 }
 
+function formatProbability(
+  value,
+) {
+  const number =
+    Number(value);
+
+  if (
+    !Number.isFinite(
+      number,
+    )
+  ) {
+    return "—";
+  }
+
+  return `${
+    (
+      number *
+      100
+    ).toFixed(
+      2,
+    )
+  }%`;
+}
+
 function getClass(
   value,
 ) {
@@ -240,11 +264,24 @@ function ServerPerformancePanel({
         .netReturnAfterCostsPercent,
     );
 
+  const expectancy =
+    Number(
+      summary
+        .expectancyPerTrade,
+    );
+
   const isProfitable =
     Number.isFinite(
       netProfit,
     ) &&
     netProfit >
+      0;
+
+  const hasPositiveExpectancy =
+    Number.isFinite(
+      expectancy,
+    ) &&
+    expectancy >
       0;
 
   return (
@@ -260,7 +297,7 @@ function ServerPerformancePanel({
           </h2>
 
           <small>
-            Real trading results including fees and estimated slippage.
+            Real trading results including fees, estimated slippage, expectancy, and trade quality.
           </small>
         </div>
 
@@ -525,6 +562,277 @@ function ServerPerformancePanel({
             {
               summary
                 .closedTrades
+            }
+          </strong>
+        </article>
+      </div>
+
+      {/* ===================================================
+          EXPECTANCY & TRADE QUALITY
+          =================================================== */}
+
+      <div className="portfolio-section-heading">
+        <div>
+          <h3>
+            Expectancy & Trade Quality
+          </h3>
+
+          <small>
+            Statistical edge based on completed trades
+          </small>
+        </div>
+      </div>
+
+      <div
+        className={`profitability-status ${
+          hasPositiveExpectancy
+            ? "profitable"
+            : "not-profitable"
+        }`}
+      >
+        <div>
+          <span>
+            Strategy expectancy
+          </span>
+
+          <strong
+            className={getClass(
+              expectancy,
+            )}
+          >
+            {hasPositiveExpectancy
+              ? "POSITIVE EDGE"
+              : expectancy ===
+                  0
+                ? "NO EDGE YET"
+                : "NEGATIVE EDGE"}
+          </strong>
+        </div>
+
+        <div>
+          <span>
+            Expectancy / trade
+          </span>
+
+          <strong
+            className={getClass(
+              expectancy,
+            )}
+          >
+            {formatMoney(
+              summary
+                .expectancyPerTrade,
+            )}
+          </strong>
+        </div>
+
+        <div>
+          <span>
+            Expectancy %
+          </span>
+
+          <strong
+            className={getClass(
+              summary
+                .expectancyPercent,
+            )}
+          >
+            {formatPercent(
+              summary
+                .expectancyPercent,
+            )}
+          </strong>
+        </div>
+      </div>
+
+      <div className="analytics-primary-grid">
+        <article className="analytics-card">
+          <span>
+            Average winner
+          </span>
+
+          <strong className="positive">
+            {formatMoney(
+              summary
+                .averageWinningTrade,
+            )}
+          </strong>
+
+          <small>
+            Average profit from winning exits
+          </small>
+        </article>
+
+        <article className="analytics-card">
+          <span>
+            Average loser
+          </span>
+
+          <strong className="negative">
+            {formatMoney(
+              summary
+                .averageLosingTrade,
+            )}
+          </strong>
+
+          <small>
+            Average loss from losing exits
+          </small>
+        </article>
+
+        <article className="analytics-card">
+          <span>
+            Avg P/L / closed trade
+          </span>
+
+          <strong
+            className={getClass(
+              summary
+                .averageProfitPerClosedTrade,
+            )}
+          >
+            {formatMoney(
+              summary
+                .averageProfitPerClosedTrade,
+            )}
+          </strong>
+        </article>
+
+        <article className="analytics-card">
+          <span>
+            Win / loss ratio
+          </span>
+
+          <strong>
+            {summary
+              .averageWinLossRatio ===
+            null
+              ? "∞"
+              : formatNumber(
+                  summary
+                    .averageWinLossRatio,
+                )}
+          </strong>
+
+          <small>
+            Average winner ÷ average loser
+          </small>
+        </article>
+
+        <article className="analytics-card">
+          <span>
+            Largest winner
+          </span>
+
+          <strong className="positive">
+            {formatMoney(
+              summary
+                .largestWinningTrade,
+            )}
+          </strong>
+        </article>
+
+        <article className="analytics-card">
+          <span>
+            Largest loss
+          </span>
+
+          <strong className="negative">
+            {formatMoney(
+              summary
+                .largestLosingTrade,
+            )}
+          </strong>
+        </article>
+
+        <article className="analytics-card">
+          <span>
+            Maximum losing streak
+          </span>
+
+          <strong
+            className={
+              Number(
+                summary
+                  .maximumConsecutiveLosses,
+              ) >
+              0
+                ? "negative"
+                : "neutral"
+            }
+          >
+            {
+              summary
+                .maximumConsecutiveLosses ??
+              0
+            }
+          </strong>
+
+          <small>
+            Most consecutive losing trades
+          </small>
+        </article>
+
+        <article className="analytics-card">
+          <span>
+            Current losing streak
+          </span>
+
+          <strong
+            className={
+              Number(
+                summary
+                  .currentConsecutiveLosses,
+              ) >
+              0
+                ? "negative"
+                : "neutral"
+            }
+          >
+            {
+              summary
+                .currentConsecutiveLosses ??
+              0
+            }
+          </strong>
+        </article>
+
+        <article className="analytics-card">
+          <span>
+            Winning probability
+          </span>
+
+          <strong className="positive">
+            {formatProbability(
+              summary
+                .winProbability,
+            )}
+          </strong>
+        </article>
+
+        <article className="analytics-card">
+          <span>
+            Losing probability
+          </span>
+
+          <strong className="negative">
+            {formatProbability(
+              summary
+                .lossProbability,
+            )}
+          </strong>
+        </article>
+
+        <article className="analytics-card">
+          <span>
+            Break-even trades
+          </span>
+
+          <strong>
+            {
+              summary
+                .breakEvenTrades ??
+              0
             }
           </strong>
         </article>

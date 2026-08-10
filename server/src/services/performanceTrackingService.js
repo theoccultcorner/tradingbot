@@ -16,18 +16,9 @@ const DEFAULT_STARTING_CASH =
  *
  * 5 basis points = 0.05%
  *
- * You can override this on Render with:
+ * Render environment override:
  *
  * PAPER_SLIPPAGE_BPS=5
- *
- * Examples:
- *
- * 1 bp  = 0.01%
- * 5 bps = 0.05%
- * 10 bps = 0.10%
- *
- * We intentionally keep this separate
- * from exchange fees.
  */
 const DEFAULT_SLIPPAGE_BPS =
   5;
@@ -35,7 +26,9 @@ const DEFAULT_SLIPPAGE_BPS =
 function timestampValue(
   value,
 ) {
-  if (!value) {
+  if (
+    !value
+  ) {
     return null;
   }
 
@@ -82,11 +75,12 @@ function positiveNumberOrFallback(
       value,
     );
 
-  return Number.isFinite(
-    number,
-  ) &&
-    number >
-      0
+  return (
+    Number.isFinite(
+      number,
+    ) &&
+    number > 0
+  )
     ? number
     : fallback;
 }
@@ -109,7 +103,7 @@ function normalizeSlippageBps(
 
   /*
    * Keep accidental configuration values
-   * within a reasonable safety range.
+   * inside a reasonable range.
    *
    * 1000 bps = 10%.
    */
@@ -149,7 +143,7 @@ function isToday(
  * Example:
  *
  * $100 order
- * 5 basis points
+ * 5 bps
  *
  * $100 × 0.0005 = $0.05
  */
@@ -174,20 +168,16 @@ function calculateTradeSlippage(
 }
 
 /*
- * Calculate execution costs across all
- * orders.
+ * Calculate all estimated execution
+ * costs.
  *
  * IMPORTANT:
  *
- * realizedProfit from the paper portfolio
- * already includes exchange fees through
- * the execution accounting.
+ * realizedProfit already includes the
+ * trading fee from the paper portfolio.
  *
- * Therefore we DO NOT subtract fees again
- * when calculating net profit.
- *
- * Fees are reported separately for
- * transparency.
+ * Fees must NOT be subtracted from the
+ * account profit a second time.
  */
 function calculateTradingCosts(
   trades,
@@ -216,36 +206,32 @@ function calculateTradingCosts(
       );
   }
 
+  const totalTradingCosts =
+    totalFees +
+    estimatedSlippage;
+
   return {
     totalFees,
 
     estimatedSlippage,
 
-    totalTradingCosts:
-      totalFees +
-      estimatedSlippage,
+    totalTradingCosts,
 
     averageFeePerOrder:
-      trades.length >
-      0
+      trades.length > 0
         ? totalFees /
           trades.length
         : 0,
 
     averageSlippagePerOrder:
-      trades.length >
-      0
+      trades.length > 0
         ? estimatedSlippage /
           trades.length
         : 0,
 
     averageTradingCostPerOrder:
-      trades.length >
-      0
-        ? (
-            totalFees +
-            estimatedSlippage
-          ) /
+      trades.length > 0
+        ? totalTradingCosts /
           trades.length
         : 0,
   };
@@ -258,8 +244,7 @@ function calculateDrawdown(
     !Array.isArray(
       points,
     ) ||
-    points.length ===
-      0
+    points.length === 0
   ) {
     return {
       amount:
@@ -308,8 +293,7 @@ function calculateDrawdown(
     }
 
     if (
-      peak <=
-      0
+      peak <= 0
     ) {
       continue;
     }
@@ -346,6 +330,12 @@ function calculateDrawdown(
   };
 }
 
+/*
+ * Gross profit divided by gross loss.
+ *
+ * null means there were profitable trades
+ * but no losing closed trades.
+ */
 function calculateProfitFactor(
   trades,
 ) {
@@ -355,10 +345,9 @@ function calculateProfitFactor(
         (
           trade,
         ) =>
-          Number(
+          numberOrZero(
             trade.realizedProfit,
-          ) >
-          0,
+          ) > 0,
       )
       .reduce(
         (
@@ -366,7 +355,7 @@ function calculateProfitFactor(
           trade,
         ) =>
           total +
-          Number(
+          numberOrZero(
             trade.realizedProfit,
           ),
         0,
@@ -379,10 +368,9 @@ function calculateProfitFactor(
           (
             trade,
           ) =>
-            Number(
+            numberOrZero(
               trade.realizedProfit,
-            ) <
-            0,
+            ) < 0,
         )
         .reduce(
           (
@@ -390,7 +378,7 @@ function calculateProfitFactor(
             trade,
           ) =>
             total +
-            Number(
+            numberOrZero(
               trade.realizedProfit,
             ),
           0,
@@ -398,11 +386,9 @@ function calculateProfitFactor(
     );
 
   if (
-    grossLoss ===
-    0
+    grossLoss === 0
   ) {
-    return grossProfit >
-      0
+    return grossProfit > 0
       ? null
       : 0;
   }
@@ -411,6 +397,353 @@ function calculateProfitFactor(
     grossProfit /
     grossLoss
   );
+}
+
+/*
+ * =========================================================
+ * PROFITABILITY UPGRADE #2
+ *
+ * EXPECTANCY PER CLOSED TRADE
+ * =========================================================
+ *
+ * Only completed SELL trades are passed
+ * into this function.
+ *
+ * Expectancy:
+ *
+ * (Win Probability × Average Winner)
+ * +
+ * (Loss Probability × Average Loser)
+ *
+ * Average loser remains negative.
+ */
+function calculateExpectancyMetrics(
+  trades,
+  startingCash,
+) {
+  const closedTrades =
+    Array.isArray(
+      trades,
+    )
+      ? trades.filter(
+          (
+            trade,
+          ) =>
+            Number.isFinite(
+              Number(
+                trade.realizedProfit,
+              ),
+            ),
+        )
+      : [];
+
+  const wins =
+    closedTrades.filter(
+      (
+        trade,
+      ) =>
+        numberOrZero(
+          trade.realizedProfit,
+        ) > 0,
+    );
+
+  const losses =
+    closedTrades.filter(
+      (
+        trade,
+      ) =>
+        numberOrZero(
+          trade.realizedProfit,
+        ) < 0,
+    );
+
+  const breakEvenTrades =
+    closedTrades.filter(
+      (
+        trade,
+      ) =>
+        numberOrZero(
+          trade.realizedProfit,
+        ) === 0,
+    );
+
+  const totalWinningProfit =
+    wins.reduce(
+      (
+        total,
+        trade,
+      ) =>
+        total +
+        numberOrZero(
+          trade.realizedProfit,
+        ),
+      0,
+    );
+
+  const totalLosingProfit =
+    losses.reduce(
+      (
+        total,
+        trade,
+      ) =>
+        total +
+        numberOrZero(
+          trade.realizedProfit,
+        ),
+      0,
+    );
+
+  const totalClosedProfit =
+    closedTrades.reduce(
+      (
+        total,
+        trade,
+      ) =>
+        total +
+        numberOrZero(
+          trade.realizedProfit,
+        ),
+      0,
+    );
+
+  const averageWinningTrade =
+    wins.length > 0
+      ? totalWinningProfit /
+        wins.length
+      : 0;
+
+  /*
+   * Remains negative.
+   */
+  const averageLosingTrade =
+    losses.length > 0
+      ? totalLosingProfit /
+        losses.length
+      : 0;
+
+  const winProbability =
+    closedTrades.length > 0
+      ? wins.length /
+        closedTrades.length
+      : 0;
+
+  const lossProbability =
+    closedTrades.length > 0
+      ? losses.length /
+        closedTrades.length
+      : 0;
+
+  const breakEvenProbability =
+    closedTrades.length > 0
+      ? breakEvenTrades.length /
+        closedTrades.length
+      : 0;
+
+  const expectancyPerTrade =
+    (
+      winProbability *
+      averageWinningTrade
+    ) +
+    (
+      lossProbability *
+      averageLosingTrade
+    );
+
+  /*
+   * Direct average provides a useful
+   * cross-check against the probability
+   * formula above.
+   */
+  const averageProfitPerClosedTrade =
+    closedTrades.length > 0
+      ? totalClosedProfit /
+        closedTrades.length
+      : 0;
+
+  /*
+   * Express expectancy relative to the
+   * paper account starting balance.
+   */
+  const expectancyPercent =
+    startingCash > 0
+      ? (
+          expectancyPerTrade /
+          startingCash
+        ) *
+        100
+      : 0;
+
+  const averageWinLossRatio =
+    averageLosingTrade < 0
+      ? (
+          averageWinningTrade /
+          Math.abs(
+            averageLosingTrade,
+          )
+        )
+      : averageWinningTrade > 0
+        ? null
+        : 0;
+
+  const largestWinningTrade =
+    wins.length > 0
+      ? Math.max(
+          ...wins.map(
+            (
+              trade,
+            ) =>
+              numberOrZero(
+                trade.realizedProfit,
+              ),
+          ),
+        )
+      : 0;
+
+  const largestLosingTrade =
+    losses.length > 0
+      ? Math.min(
+          ...losses.map(
+            (
+              trade,
+            ) =>
+              numberOrZero(
+                trade.realizedProfit,
+              ),
+          ),
+        )
+      : 0;
+
+  /*
+   * Calculate losing streaks in true
+   * chronological order.
+   */
+  const chronologicalTrades =
+    [
+      ...closedTrades,
+    ].sort(
+      (
+        left,
+        right,
+      ) =>
+        (
+          timestampValue(
+            left.timestamp,
+          ) ||
+          timestampValue(
+            left.createdAt,
+          ) ||
+          0
+        ) -
+        (
+          timestampValue(
+            right.timestamp,
+          ) ||
+          timestampValue(
+            right.createdAt,
+          ) ||
+          0
+        ),
+    );
+
+  let consecutiveLosses =
+    0;
+
+  let maximumConsecutiveLosses =
+    0;
+
+  for (
+    const trade of chronologicalTrades
+  ) {
+    const profit =
+      numberOrZero(
+        trade.realizedProfit,
+      );
+
+    if (
+      profit < 0
+    ) {
+      consecutiveLosses +=
+        1;
+
+      maximumConsecutiveLosses =
+        Math.max(
+          maximumConsecutiveLosses,
+          consecutiveLosses,
+        );
+    } else {
+      consecutiveLosses =
+        0;
+    }
+  }
+
+  /*
+   * Current losing streak.
+   *
+   * Start at the latest closed trade and
+   * count backwards until a non-loss.
+   */
+  let currentConsecutiveLosses =
+    0;
+
+  for (
+    let index =
+      chronologicalTrades.length -
+      1;
+
+    index >= 0;
+
+    index -=
+      1
+  ) {
+    const profit =
+      numberOrZero(
+        chronologicalTrades[
+          index
+        ].realizedProfit,
+      );
+
+    if (
+      profit < 0
+    ) {
+      currentConsecutiveLosses +=
+        1;
+    } else {
+      break;
+    }
+  }
+
+  return {
+    totalClosedProfit,
+
+    averageWinningTrade,
+
+    averageLosingTrade,
+
+    averageProfitPerClosedTrade,
+
+    averageWinLossRatio,
+
+    expectancyPerTrade,
+
+    expectancyPercent,
+
+    winProbability,
+
+    lossProbability,
+
+    breakEvenProbability,
+
+    largestWinningTrade,
+
+    largestLosingTrade,
+
+    maximumConsecutiveLosses,
+
+    currentConsecutiveLosses,
+
+    breakEvenTrades:
+      breakEvenTrades.length,
+  };
 }
 
 function groupTradePerformance(
@@ -447,6 +780,9 @@ function groupTradePerformance(
         losses:
           0,
 
+        breakEven:
+          0,
+
         realizedProfit:
           0,
 
@@ -464,22 +800,22 @@ function groupTradePerformance(
       1;
 
     const profit =
-      Number(
+      numberOrZero(
         trade.realizedProfit,
-      ) ||
-      0;
+      );
 
     if (
-      profit >
-      0
+      profit > 0
     ) {
       group.wins +=
         1;
     } else if (
-      profit <
-      0
+      profit < 0
     ) {
       group.losses +=
+        1;
+    } else {
+      group.breakEven +=
         1;
     }
 
@@ -487,10 +823,9 @@ function groupTradePerformance(
       profit;
 
     group.fees +=
-      Number(
+      numberOrZero(
         trade.fee,
-      ) ||
-      0;
+      );
   }
 
   return Object.values(
@@ -503,13 +838,18 @@ function groupTradePerformance(
         ...group,
 
         winRate:
-          group.trades >
-          0
+          group.trades > 0
             ? (
                 group.wins /
                 group.trades
               ) *
               100
+            : 0,
+
+        averageProfit:
+          group.trades > 0
+            ? group.realizedProfit /
+              group.trades
             : 0,
       }),
     )
@@ -527,10 +867,8 @@ function escapeCsv(
   value,
 ) {
   if (
-    value ===
-      null ||
-    value ===
-      undefined
+    value === null ||
+    value === undefined
   ) {
     return "";
   }
@@ -613,9 +951,10 @@ export class PerformanceTrackingService {
       false;
 
     /*
-     * Equity history lives in server memory.
+     * Equity history is maintained in
+     * server memory.
      *
-     * Portfolio and trade records remain
+     * Trades and the portfolio remain
      * persistent in SQLite.
      */
     this.equityHistory =
@@ -705,35 +1044,49 @@ export class PerformanceTrackingService {
         )
       ) {
         const quantity =
-          Number(
+          numberOrZero(
             position.quantity,
-          ) ||
-          0;
+          );
 
         const averageEntryPrice =
-          Number(
+          numberOrZero(
             position
               .averageEntryPrice,
-          ) ||
-          0;
+          );
 
-        const currentPrice =
+        const latestKnownPrice =
           this.latestPrices[
             positionSymbol
-          ] ||
-          (
-            positionSymbol ===
-              symbol &&
-            Number.isFinite(
-              Number(
-                marketPrice,
-              ),
-            )
+          ];
+
+        const currentPrice =
+          Number.isFinite(
+            Number(
+              latestKnownPrice,
+            ),
+          ) &&
+          Number(
+            latestKnownPrice,
+          ) > 0
+            ? Number(
+                latestKnownPrice,
+              )
+            : (
+                positionSymbol ===
+                  symbol &&
+                Number.isFinite(
+                  Number(
+                    marketPrice,
+                  ),
+                ) &&
+                Number(
+                  marketPrice,
+                ) > 0
+              )
               ? Number(
                   marketPrice,
                 )
-              : averageEntryPrice
-          );
+              : averageEntryPrice;
 
         const positionValue =
           quantity *
@@ -752,16 +1105,14 @@ export class PerformanceTrackingService {
       }
 
       const cash =
-        Number(
+        numberOrZero(
           portfolio.cash,
-        ) ||
-        0;
+        );
 
       /*
-       * FIX:
+       * Correct paper-account fallback.
        *
-       * The paper account now starts at
-       * $300, not $10,000.
+       * $300 rather than the old $10,000.
        */
       const startingCash =
         positiveNumberOrFallback(
@@ -775,17 +1126,16 @@ export class PerformanceTrackingService {
         marketValue;
 
       /*
-       * This already reflects recorded
-       * exchange fees because fees affect
-       * cash and position cost basis.
+       * Fees already affect cash and cost
+       * basis, so this is after recorded
+       * exchange fees.
        */
       const totalProfit =
         equity -
         startingCash;
 
       const totalReturnPercent =
-        startingCash >
-        0
+        startingCash > 0
           ? (
               totalProfit /
               startingCash
@@ -808,11 +1158,10 @@ export class PerformanceTrackingService {
         totalReturnPercent,
 
         realizedProfit:
-          Number(
+          numberOrZero(
             portfolio
               .realizedProfit,
-          ) ||
-          0,
+          ),
 
         unrealizedProfit,
 
@@ -934,6 +1283,11 @@ export class PerformanceTrackingService {
         ),
       ]);
 
+    /*
+     * A SELL represents a completed exit
+     * and therefore counts as a closed
+     * trade for expectancy statistics.
+     */
     const sellTrades =
       trades.filter(
         (
@@ -954,10 +1308,9 @@ export class PerformanceTrackingService {
         (
           trade,
         ) =>
-          Number(
+          numberOrZero(
             trade.realizedProfit,
-          ) >
-          0,
+          ) > 0,
       );
 
     const losses =
@@ -965,10 +1318,19 @@ export class PerformanceTrackingService {
         (
           trade,
         ) =>
-          Number(
+          numberOrZero(
             trade.realizedProfit,
-          ) <
-          0,
+          ) < 0,
+      );
+
+    const breakEvenTrades =
+      sellTrades.filter(
+        (
+          trade,
+        ) =>
+          numberOrZero(
+            trade.realizedProfit,
+          ) === 0,
       );
 
     const todayTrades =
@@ -988,10 +1350,9 @@ export class PerformanceTrackingService {
           trade,
         ) =>
           total +
-          Number(
+          numberOrZero(
             trade
-              .realizedProfit ||
-              0,
+              .realizedProfit,
           ),
         0,
       );
@@ -1017,12 +1378,24 @@ export class PerformanceTrackingService {
 
     /*
      * =====================================================
+     * PROFITABILITY UPGRADE #2
+     *
+     * EXPECTANCY PER CLOSED TRADE
+     * =====================================================
+     */
+    const expectancyMetrics =
+      calculateExpectancyMetrics(
+        sellTrades,
+        startingCash,
+      );
+
+    /*
+     * =====================================================
      * PROFITABILITY UPGRADE #1
      *
      * NET PROFIT AFTER FEES & SLIPPAGE
      * =====================================================
      */
-
     const tradingCosts =
       calculateTradingCosts(
         trades,
@@ -1033,11 +1406,10 @@ export class PerformanceTrackingService {
      * Account profit AFTER recorded fees.
      *
      * Prefer live equity because this
-     * includes both realized and unrealized
-     * account performance.
+     * includes open-position P/L.
      *
-     * If no equity snapshot exists yet,
-     * use realized profit as the fallback.
+     * Before the first equity snapshot,
+     * realized P/L is used as a fallback.
      */
     const accountProfitAfterFees =
       latestEquity &&
@@ -1051,16 +1423,14 @@ export class PerformanceTrackingService {
             latestEquity
               .totalProfit,
           )
-        : Number(
+        : numberOrZero(
             portfolio
               .realizedProfit,
-          ) ||
-          0;
+          );
 
     /*
      * Add recorded fees back to estimate
-     * what P/L would have been before
-     * exchange fees.
+     * what account P/L was before fees.
      */
     const grossTradingProfit =
       accountProfitAfterFees +
@@ -1068,11 +1438,12 @@ export class PerformanceTrackingService {
         .totalFees;
 
     /*
-     * Fees are ALREADY included in
+     * Fees already exist inside
      * accountProfitAfterFees.
      *
-     * Therefore only estimated slippage
-     * is subtracted here.
+     * Therefore only our estimated
+     * slippage needs to be additionally
+     * deducted.
      */
     const netProfitAfterCosts =
       accountProfitAfterFees -
@@ -1080,11 +1451,19 @@ export class PerformanceTrackingService {
         .estimatedSlippage;
 
     const netReturnAfterCostsPercent =
-      startingCash >
-      0
+      startingCash > 0
         ? (
             netProfitAfterCosts /
             startingCash
+          ) *
+          100
+        : 0;
+
+    const winRate =
+      sellTrades.length > 0
+        ? (
+            wins.length /
+            sellTrades.length
           ) *
           100
         : 0;
@@ -1112,6 +1491,11 @@ export class PerformanceTrackingService {
 
       latestEquity,
 
+      /*
+       * ===================================================
+       * TRADE COUNTS
+       * ===================================================
+       */
       totalOrders:
         trades.length,
 
@@ -1124,40 +1508,104 @@ export class PerformanceTrackingService {
       losses:
         losses.length,
 
-      winRate:
-        sellTrades.length >
-        0
-          ? (
-              wins.length /
-              sellTrades.length
-            ) *
-            100
-          : 0,
+      breakEvenTrades:
+        breakEvenTrades.length,
 
+      winRate,
+
+      /*
+       * ===================================================
+       * PROFIT FACTOR
+       * ===================================================
+       */
       profitFactor:
         calculateProfitFactor(
           sellTrades,
         ),
 
+      /*
+       * ===================================================
+       * PROFITABILITY UPGRADE #2
+       *
+       * EXPECTANCY METRICS
+       * ===================================================
+       */
+      averageWinningTrade:
+        expectancyMetrics
+          .averageWinningTrade,
+
+      averageLosingTrade:
+        expectancyMetrics
+          .averageLosingTrade,
+
+      averageProfitPerClosedTrade:
+        expectancyMetrics
+          .averageProfitPerClosedTrade,
+
+      averageWinLossRatio:
+        expectancyMetrics
+          .averageWinLossRatio,
+
+      expectancyPerTrade:
+        expectancyMetrics
+          .expectancyPerTrade,
+
+      expectancyPercent:
+        expectancyMetrics
+          .expectancyPercent,
+
+      winProbability:
+        expectancyMetrics
+          .winProbability,
+
+      lossProbability:
+        expectancyMetrics
+          .lossProbability,
+
+      breakEvenProbability:
+        expectancyMetrics
+          .breakEvenProbability,
+
+      largestWinningTrade:
+        expectancyMetrics
+          .largestWinningTrade,
+
+      largestLosingTrade:
+        expectancyMetrics
+          .largestLosingTrade,
+
+      maximumConsecutiveLosses:
+        expectancyMetrics
+          .maximumConsecutiveLosses,
+
+      currentConsecutiveLosses:
+        expectancyMetrics
+          .currentConsecutiveLosses,
+
+      /*
+       * ===================================================
+       * DAILY PERFORMANCE
+       * ===================================================
+       */
       realizedProfitToday,
 
       /*
        * ===================================================
-       * NEW PROFITABILITY METRICS
+       * PROFITABILITY UPGRADE #1
+       *
+       * FEES + SLIPPAGE
        * ===================================================
        */
-
       grossTradingProfit,
 
       /*
-       * Account profit after the actual
+       * Account result after the actual
        * fees already recorded by the bot.
        */
       accountProfitAfterFees,
 
       /*
-       * Recorded exchange fees from all
-       * executions.
+       * Actual paper trading fees.
        */
       totalFees:
         tradingCosts
@@ -1171,19 +1619,21 @@ export class PerformanceTrackingService {
           .estimatedSlippage,
 
       /*
-       * Fees + estimated slippage.
+       * Fees plus estimated slippage.
        *
-       * Useful for showing total trading
-       * friction, but DO NOT subtract this
-       * again from accountProfitAfterFees.
+       * This is informational. Do not
+       * subtract it again from
+       * accountProfitAfterFees.
        */
       totalTradingCosts:
         tradingCosts
           .totalTradingCosts,
 
       /*
-       * Most important number for
-       * profitability testing.
+       * Key profitability number:
+       *
+       * account result after actual fees
+       * minus estimated slippage.
        */
       netProfitAfterCosts,
 
@@ -1201,19 +1651,25 @@ export class PerformanceTrackingService {
         tradingCosts
           .averageTradingCostPerOrder,
 
-      /*
-       * The assumption used to calculate
-       * estimated slippage.
-       */
       slippageBps:
         this.slippageBps,
 
+      /*
+       * ===================================================
+       * RISK
+       * ===================================================
+       */
       maximumDrawdownAmount:
         drawdown.amount,
 
       maximumDrawdownPercent:
         drawdown.percent,
 
+      /*
+       * ===================================================
+       * PERFORMANCE BREAKDOWNS
+       * ===================================================
+       */
       bySymbol:
         groupTradePerformance(
           sellTrades,
@@ -1226,6 +1682,11 @@ export class PerformanceTrackingService {
           "timeframe",
         ),
 
+      /*
+       * ===================================================
+       * EQUITY HISTORY
+       * ===================================================
+       */
       equityStorage:
         "memory",
 
@@ -1254,13 +1715,8 @@ export class PerformanceTrackingService {
       "price",
       "grossValue",
       "fee",
-
-      /*
-       * New profitability columns.
-       */
       "estimatedSlippage",
       "estimatedExecutionCost",
-
       "realizedProfit",
       "source",
     ];
