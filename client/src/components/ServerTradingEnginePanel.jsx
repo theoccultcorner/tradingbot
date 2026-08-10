@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -128,17 +129,27 @@ function ServerTradingEnginePanel({
   /*
    * IMPORTANT:
    *
-   * Synchronize the form whenever fresh
-   * settings arrive from the server.
+   * The server trading-engine hook polls
+   * the backend regularly.
    *
-   * Without this, the inputs can continue
-   * displaying stale defaults after the
-   * server state loads.
+   * We only want to initialize the editable
+   * form from the server ONCE.
+   *
+   * Otherwise every polling refresh would
+   * overwrite settings the user is currently
+   * editing before Save Settings is pressed.
    */
+  const hasInitializedDraft =
+    useRef(
+      false,
+    );
+
   useEffect(
     () => {
       if (
-        !engine?.settings
+        !engine?.settings ||
+        hasInitializedDraft
+          .current
       ) {
         return;
       }
@@ -147,6 +158,10 @@ function ServerTradingEnginePanel({
         ...DEFAULT_SETTINGS,
         ...engine.settings,
       });
+
+      hasInitializedDraft
+        .current =
+        true;
     },
     [
       engine?.settings,
@@ -162,6 +177,7 @@ function ServerTradingEnginePanel({
         previous,
       ) => ({
         ...previous,
+
         [name]:
           value,
       }),
@@ -346,7 +362,8 @@ function ServerTradingEnginePanel({
 
         enabled:
           Boolean(
-            nextSettings.enabled,
+            nextSettings
+              .enabled,
           ),
 
         emergencyStop:
@@ -368,7 +385,7 @@ function ServerTradingEnginePanel({
         );
 
       /*
-       * Some versions of your hook return
+       * Some versions of the hook return
        * { success: false, message }, while
        * others return the updated engine
        * directly.
@@ -383,6 +400,10 @@ function ServerTradingEnginePanel({
         );
       }
 
+      /*
+       * Keep the editable form synchronized
+       * with exactly what we just saved.
+       */
       setDraft(
         cleaned,
       );
@@ -411,12 +432,19 @@ function ServerTradingEnginePanel({
   }
 
   async function toggleEngine() {
+    /*
+     * Use draft.enabled rather than the
+     * polling server settings.
+     *
+     * This keeps the toggle consistent with
+     * the editable form state.
+     */
     const next = {
       ...draft,
 
       enabled:
         !Boolean(
-          settings.enabled,
+          draft.enabled,
         ),
     };
 
@@ -430,9 +458,14 @@ function ServerTradingEnginePanel({
   }
 
   async function toggleEmergencyStop() {
+    /*
+     * Use the editable draft state instead
+     * of the periodically refreshed server
+     * settings.
+     */
     const nextEmergencyStop =
       !Boolean(
-        settings
+        draft
           .emergencyStop,
       );
 
@@ -479,14 +512,19 @@ function ServerTradingEnginePanel({
   const lastRiskEvent =
     engine?.lastRiskEvent;
 
+  /*
+   * These controls should represent the
+   * editable/saved draft instead of being
+   * reset by polling server state.
+   */
   const isEnabled =
     Boolean(
-      settings.enabled,
+      draft.enabled,
     );
 
   const emergencyStop =
     Boolean(
-      settings
+      draft
         .emergencyStop,
     );
 
@@ -575,12 +613,12 @@ function ServerTradingEnginePanel({
 
           <strong>
             {Number(
-              settings
+              draft
                 .maximumTradesPerDay,
             ) ===
             0
               ? "Unlimited"
-              : settings
+              : draft
                   .maximumTradesPerDay}
           </strong>
         </div>
@@ -592,12 +630,12 @@ function ServerTradingEnginePanel({
 
           <strong>
             {Number(
-              settings
+              draft
                 .cooldownMinutes,
             ) ===
             0
               ? "None"
-              : `${settings.cooldownMinutes} min`}
+              : `${draft.cooldownMinutes} min`}
           </strong>
         </div>
       </div>
