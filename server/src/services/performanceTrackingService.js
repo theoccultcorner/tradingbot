@@ -23,6 +23,18 @@ const DEFAULT_STARTING_CASH =
 const DEFAULT_SLIPPAGE_BPS =
   5;
 
+/*
+ * Profit-factor labels become meaningful
+ * only after a reasonable number of closed
+ * trades.
+ *
+ * This does not prove profitability. It
+ * simply prevents a tiny sample from being
+ * presented as strong evidence.
+ */
+const MIN_PROFIT_FACTOR_SAMPLE =
+  20;
+
 function timestampValue(
   value,
 ) {
@@ -331,16 +343,46 @@ function calculateDrawdown(
 }
 
 /*
- * Gross profit divided by gross loss.
+ * =========================================================
+ * PROFITABILITY UPGRADE #3
  *
- * null means there were profitable trades
- * but no losing closed trades.
+ * PROFIT FACTOR INTELLIGENCE
+ * =========================================================
+ *
+ * Profit Factor =
+ *
+ * Gross Winning Profit
+ * --------------------
+ * Gross Losing Amount
+ *
+ * A value above 1 means gross winners are
+ * larger than gross losers.
+ *
+ * This metric is still sample-dependent, so
+ * we also return a rating that refuses to
+ * label tiny samples as "strong".
  */
-function calculateProfitFactor(
+function calculateProfitFactorMetrics(
   trades,
 ) {
-  const grossProfit =
-    trades
+  const closedTrades =
+    Array.isArray(
+      trades,
+    )
+      ? trades.filter(
+          (
+            trade,
+          ) =>
+            Number.isFinite(
+              Number(
+                trade.realizedProfit,
+              ),
+            ),
+        )
+      : [];
+
+  const grossWinningProfit =
+    closedTrades
       .filter(
         (
           trade,
@@ -361,9 +403,9 @@ function calculateProfitFactor(
         0,
       );
 
-  const grossLoss =
+  const grossLosingAmount =
     Math.abs(
-      trades
+      closedTrades
         .filter(
           (
             trade,
@@ -385,18 +427,101 @@ function calculateProfitFactor(
         ),
     );
 
+  let profitFactor =
+    0;
+
   if (
-    grossLoss === 0
+    grossLosingAmount === 0
   ) {
-    return grossProfit > 0
-      ? null
-      : 0;
+    profitFactor =
+      grossWinningProfit > 0
+        ? null
+        : 0;
+  } else {
+    profitFactor =
+      grossWinningProfit /
+      grossLosingAmount;
   }
 
-  return (
-    grossProfit /
-    grossLoss
-  );
+  const sampleSize =
+    closedTrades.length;
+
+  const sampleAdequate =
+    sampleSize >=
+    MIN_PROFIT_FACTOR_SAMPLE;
+
+  let rating =
+    "NO DATA";
+
+  if (
+    sampleSize === 0
+  ) {
+    rating =
+      "NO DATA";
+  } else if (
+    !sampleAdequate
+  ) {
+    rating =
+      "INSUFFICIENT SAMPLE";
+  } else if (
+    profitFactor === null
+  ) {
+    rating =
+      "VERY STRONG";
+  } else if (
+    profitFactor < 1
+  ) {
+    rating =
+      "LOSING";
+  } else if (
+    profitFactor < 1.2
+  ) {
+    rating =
+      "WEAK";
+  } else if (
+    profitFactor < 1.5
+  ) {
+    rating =
+      "IMPROVING";
+  } else if (
+    profitFactor < 2
+  ) {
+    rating =
+      "STRONG";
+  } else {
+    rating =
+      "VERY STRONG";
+  }
+
+  return {
+    grossWinningProfit,
+
+    grossLosingAmount,
+
+    profitFactor,
+
+    rating,
+
+    sampleSize,
+
+    sampleAdequate,
+
+    minimumSample:
+      MIN_PROFIT_FACTOR_SAMPLE,
+  };
+}
+
+/*
+ * Keep the original helper available so
+ * any future internal callers can still
+ * request only the numeric factor.
+ */
+function calculateProfitFactor(
+  trades,
+) {
+  return calculateProfitFactorMetrics(
+    trades,
+  ).profitFactor;
 }
 
 /*
@@ -405,17 +530,6 @@ function calculateProfitFactor(
  *
  * EXPECTANCY PER CLOSED TRADE
  * =========================================================
- *
- * Only completed SELL trades are passed
- * into this function.
- *
- * Expectancy:
- *
- * (Win Probability × Average Winner)
- * +
- * (Loss Probability × Average Loser)
- *
- * Average loser remains negative.
  */
 function calculateExpectancyMetrics(
   trades,
@@ -512,9 +626,6 @@ function calculateExpectancyMetrics(
         wins.length
       : 0;
 
-  /*
-   * Remains negative.
-   */
   const averageLosingTrade =
     losses.length > 0
       ? totalLosingProfit /
@@ -549,21 +660,12 @@ function calculateExpectancyMetrics(
       averageLosingTrade
     );
 
-  /*
-   * Direct average provides a useful
-   * cross-check against the probability
-   * formula above.
-   */
   const averageProfitPerClosedTrade =
     closedTrades.length > 0
       ? totalClosedProfit /
         closedTrades.length
       : 0;
 
-  /*
-   * Express expectancy relative to the
-   * paper account starting balance.
-   */
   const expectancyPercent =
     startingCash > 0
       ? (
@@ -613,10 +715,6 @@ function calculateExpectancyMetrics(
         )
       : 0;
 
-  /*
-   * Calculate losing streaks in true
-   * chronological order.
-   */
   const chronologicalTrades =
     [
       ...closedTrades,
@@ -676,12 +774,6 @@ function calculateExpectancyMetrics(
     }
   }
 
-  /*
-   * Current losing streak.
-   *
-   * Start at the latest closed trade and
-   * count backwards until a non-loss.
-   */
   let currentConsecutiveLosses =
     0;
 
@@ -788,6 +880,12 @@ function groupTradePerformance(
 
         fees:
           0,
+
+        grossWinningProfit:
+          0,
+
+        grossLosingAmount:
+          0,
       };
     }
 
@@ -809,11 +907,19 @@ function groupTradePerformance(
     ) {
       group.wins +=
         1;
+
+      group.grossWinningProfit +=
+        profit;
     } else if (
       profit < 0
     ) {
       group.losses +=
         1;
+
+      group.grossLosingAmount +=
+        Math.abs(
+          profit,
+        );
     } else {
       group.breakEven +=
         1;
@@ -834,24 +940,95 @@ function groupTradePerformance(
     .map(
       (
         group,
-      ) => ({
-        ...group,
+      ) => {
+        const profitFactor =
+          group.grossLosingAmount ===
+          0
+            ? group.grossWinningProfit >
+              0
+              ? null
+              : 0
+            : group.grossWinningProfit /
+              group.grossLosingAmount;
 
-        winRate:
-          group.trades > 0
-            ? (
-                group.wins /
+        const profitFactorSampleAdequate =
+          group.trades >=
+          MIN_PROFIT_FACTOR_SAMPLE;
+
+        let profitFactorRating =
+          "NO DATA";
+
+        if (
+          group.trades === 0
+        ) {
+          profitFactorRating =
+            "NO DATA";
+        } else if (
+          !profitFactorSampleAdequate
+        ) {
+          profitFactorRating =
+            "INSUFFICIENT SAMPLE";
+        } else if (
+          profitFactor === null
+        ) {
+          profitFactorRating =
+            "VERY STRONG";
+        } else if (
+          profitFactor < 1
+        ) {
+          profitFactorRating =
+            "LOSING";
+        } else if (
+          profitFactor < 1.2
+        ) {
+          profitFactorRating =
+            "WEAK";
+        } else if (
+          profitFactor < 1.5
+        ) {
+          profitFactorRating =
+            "IMPROVING";
+        } else if (
+          profitFactor < 2
+        ) {
+          profitFactorRating =
+            "STRONG";
+        } else {
+          profitFactorRating =
+            "VERY STRONG";
+        }
+
+        return {
+          ...group,
+
+          winRate:
+            group.trades > 0
+              ? (
+                  group.wins /
+                  group.trades
+                ) *
+                100
+              : 0,
+
+          averageProfit:
+            group.trades > 0
+              ? group.realizedProfit /
                 group.trades
-              ) *
-              100
-            : 0,
+              : 0,
 
-        averageProfit:
-          group.trades > 0
-            ? group.realizedProfit /
-              group.trades
-            : 0,
-      }),
+          profitFactor,
+
+          profitFactorRating,
+
+          profitFactorSampleSize:
+            group.trades,
+
+          profitFactorSampleAdequate,
+
+          profitFactorMinimumSample:
+            MIN_PROFIT_FACTOR_SAMPLE,
+        };
+      },
     )
     .sort(
       (
@@ -932,10 +1109,6 @@ export class PerformanceTrackingService {
         10000,
       );
 
-    /*
-     * Estimated slippage used for
-     * profitability calculations.
-     */
     this.slippageBps =
       normalizeSlippageBps(
         slippageBps,
@@ -950,13 +1123,6 @@ export class PerformanceTrackingService {
     this.snapshotLock =
       false;
 
-    /*
-     * Equity history is maintained in
-     * server memory.
-     *
-     * Trades and the portfolio remain
-     * persistent in SQLite.
-     */
     this.equityHistory =
       [];
   }
@@ -1109,11 +1275,6 @@ export class PerformanceTrackingService {
           portfolio.cash,
         );
 
-      /*
-       * Correct paper-account fallback.
-       *
-       * $300 rather than the old $10,000.
-       */
       const startingCash =
         positiveNumberOrFallback(
           portfolio
@@ -1125,11 +1286,6 @@ export class PerformanceTrackingService {
         cash +
         marketValue;
 
-      /*
-       * Fees already affect cash and cost
-       * basis, so this is after recorded
-       * exchange fees.
-       */
       const totalProfit =
         equity -
         startingCash;
@@ -1283,11 +1439,6 @@ export class PerformanceTrackingService {
         ),
       ]);
 
-    /*
-     * A SELL represents a completed exit
-     * and therefore counts as a closed
-     * trade for expectancy statistics.
-     */
     const sellTrades =
       trades.filter(
         (
@@ -1376,41 +1527,23 @@ export class PerformanceTrackingService {
         DEFAULT_STARTING_CASH,
       );
 
-    /*
-     * =====================================================
-     * PROFITABILITY UPGRADE #2
-     *
-     * EXPECTANCY PER CLOSED TRADE
-     * =====================================================
-     */
     const expectancyMetrics =
       calculateExpectancyMetrics(
         sellTrades,
         startingCash,
       );
 
-    /*
-     * =====================================================
-     * PROFITABILITY UPGRADE #1
-     *
-     * NET PROFIT AFTER FEES & SLIPPAGE
-     * =====================================================
-     */
+    const profitFactorMetrics =
+      calculateProfitFactorMetrics(
+        sellTrades,
+      );
+
     const tradingCosts =
       calculateTradingCosts(
         trades,
         this.slippageBps,
       );
 
-    /*
-     * Account profit AFTER recorded fees.
-     *
-     * Prefer live equity because this
-     * includes open-position P/L.
-     *
-     * Before the first equity snapshot,
-     * realized P/L is used as a fallback.
-     */
     const accountProfitAfterFees =
       latestEquity &&
       Number.isFinite(
@@ -1428,23 +1561,11 @@ export class PerformanceTrackingService {
               .realizedProfit,
           );
 
-    /*
-     * Add recorded fees back to estimate
-     * what account P/L was before fees.
-     */
     const grossTradingProfit =
       accountProfitAfterFees +
       tradingCosts
         .totalFees;
 
-    /*
-     * Fees already exist inside
-     * accountProfitAfterFees.
-     *
-     * Therefore only our estimated
-     * slippage needs to be additionally
-     * deducted.
-     */
     const netProfitAfterCosts =
       accountProfitAfterFees -
       tradingCosts
@@ -1491,11 +1612,6 @@ export class PerformanceTrackingService {
 
       latestEquity,
 
-      /*
-       * ===================================================
-       * TRADE COUNTS
-       * ===================================================
-       */
       totalOrders:
         trades.length,
 
@@ -1514,21 +1630,38 @@ export class PerformanceTrackingService {
       winRate,
 
       /*
-       * ===================================================
-       * PROFIT FACTOR
-       * ===================================================
+       * PROFIT FACTOR INTELLIGENCE
        */
       profitFactor:
-        calculateProfitFactor(
-          sellTrades,
-        ),
+        profitFactorMetrics
+          .profitFactor,
+
+      grossWinningProfit:
+        profitFactorMetrics
+          .grossWinningProfit,
+
+      grossLosingAmount:
+        profitFactorMetrics
+          .grossLosingAmount,
+
+      profitFactorRating:
+        profitFactorMetrics
+          .rating,
+
+      profitFactorSampleSize:
+        profitFactorMetrics
+          .sampleSize,
+
+      profitFactorSampleAdequate:
+        profitFactorMetrics
+          .sampleAdequate,
+
+      profitFactorMinimumSample:
+        profitFactorMetrics
+          .minimumSample,
 
       /*
-       * ===================================================
-       * PROFITABILITY UPGRADE #2
-       *
        * EXPECTANCY METRICS
-       * ===================================================
        */
       averageWinningTrade:
         expectancyMetrics
@@ -1582,59 +1715,27 @@ export class PerformanceTrackingService {
         expectancyMetrics
           .currentConsecutiveLosses,
 
-      /*
-       * ===================================================
-       * DAILY PERFORMANCE
-       * ===================================================
-       */
       realizedProfitToday,
 
       /*
-       * ===================================================
-       * PROFITABILITY UPGRADE #1
-       *
        * FEES + SLIPPAGE
-       * ===================================================
        */
       grossTradingProfit,
 
-      /*
-       * Account result after the actual
-       * fees already recorded by the bot.
-       */
       accountProfitAfterFees,
 
-      /*
-       * Actual paper trading fees.
-       */
       totalFees:
         tradingCosts
           .totalFees,
 
-      /*
-       * Estimated market slippage.
-       */
       estimatedSlippage:
         tradingCosts
           .estimatedSlippage,
 
-      /*
-       * Fees plus estimated slippage.
-       *
-       * This is informational. Do not
-       * subtract it again from
-       * accountProfitAfterFees.
-       */
       totalTradingCosts:
         tradingCosts
           .totalTradingCosts,
 
-      /*
-       * Key profitability number:
-       *
-       * account result after actual fees
-       * minus estimated slippage.
-       */
       netProfitAfterCosts,
 
       netReturnAfterCostsPercent,
@@ -1654,22 +1755,12 @@ export class PerformanceTrackingService {
       slippageBps:
         this.slippageBps,
 
-      /*
-       * ===================================================
-       * RISK
-       * ===================================================
-       */
       maximumDrawdownAmount:
         drawdown.amount,
 
       maximumDrawdownPercent:
         drawdown.percent,
 
-      /*
-       * ===================================================
-       * PERFORMANCE BREAKDOWNS
-       * ===================================================
-       */
       bySymbol:
         groupTradePerformance(
           sellTrades,
@@ -1682,11 +1773,6 @@ export class PerformanceTrackingService {
           "timeframe",
         ),
 
-      /*
-       * ===================================================
-       * EQUITY HISTORY
-       * ===================================================
-       */
       equityStorage:
         "memory",
 

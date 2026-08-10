@@ -117,6 +117,58 @@ function getClass(
   return "neutral";
 }
 
+function getProfitFactorClass(
+  rating,
+) {
+  switch (
+    String(
+      rating ||
+        "",
+    ).toUpperCase()
+  ) {
+    case "VERY STRONG":
+    case "STRONG":
+      return "positive";
+
+    case "LOSING":
+      return "negative";
+
+    case "WEAK":
+    case "IMPROVING":
+    case "INSUFFICIENT SAMPLE":
+      return "neutral";
+
+    default:
+      return "neutral";
+  }
+}
+
+function formatProfitFactor(
+  value,
+) {
+  if (
+    value ===
+    null
+  ) {
+    return "∞";
+  }
+
+  const number =
+    Number(value);
+
+  if (
+    !Number.isFinite(
+      number,
+    )
+  ) {
+    return "—";
+  }
+
+  return number.toFixed(
+    2,
+  );
+}
+
 function PerformanceTable({
   title,
   rows = [],
@@ -130,7 +182,7 @@ function PerformanceTable({
       </div>
 
       <div className="performance-table">
-        <div className="performance-row performance-header">
+        <div className="performance-row performance-header performance-row-expanded">
           <span>
             Name
           </span>
@@ -141,6 +193,14 @@ function PerformanceTable({
 
           <span>
             Win rate
+          </span>
+
+          <span>
+            Profit factor
+          </span>
+
+          <span>
+            Rating
           </span>
 
           <span>
@@ -159,7 +219,7 @@ function PerformanceTable({
               row,
             ) => (
               <div
-                className="performance-row"
+                className="performance-row performance-row-expanded"
                 key={
                   row.name
                 }
@@ -180,6 +240,21 @@ function PerformanceTable({
                   {formatPercent(
                     row.winRate,
                   )}
+                </span>
+
+                <strong>
+                  {formatProfitFactor(
+                    row.profitFactor,
+                  )}
+                </strong>
+
+                <span
+                  className={getProfitFactorClass(
+                    row.profitFactorRating,
+                  )}
+                >
+                  {row.profitFactorRating ||
+                    "—"}
                 </span>
 
                 <strong
@@ -284,6 +359,17 @@ function ServerPerformancePanel({
     expectancy >
       0;
 
+  const profitFactorRating =
+    summary
+      .profitFactorRating ||
+    "NO DATA";
+
+  const profitFactorSampleAdequate =
+    Boolean(
+      summary
+        .profitFactorSampleAdequate,
+    );
+
   return (
     <section className="panel server-performance-panel">
       <div className="panel-header">
@@ -297,7 +383,7 @@ function ServerPerformancePanel({
           </h2>
 
           <small>
-            Real trading results including fees, estimated slippage, expectancy, and trade quality.
+            Real trading results including fees, estimated slippage, expectancy, profit factor, and trade quality.
           </small>
         </div>
 
@@ -524,14 +610,10 @@ function ServerPerformancePanel({
           </span>
 
           <strong>
-            {summary
-              .profitFactor ===
-            null
-              ? "∞"
-              : formatNumber(
-                  summary
-                    .profitFactor,
-                )}
+            {formatProfitFactor(
+              summary
+                .profitFactor,
+            )}
           </strong>
         </article>
 
@@ -563,6 +645,210 @@ function ServerPerformancePanel({
               summary
                 .closedTrades
             }
+          </strong>
+        </article>
+      </div>
+
+      {/* ===================================================
+          PROFIT FACTOR INTELLIGENCE
+          =================================================== */}
+
+      <div className="portfolio-section-heading">
+        <div>
+          <h3>
+            Profit Factor Intelligence
+          </h3>
+
+          <small>
+            How much gross winning profit the strategy produces for every dollar of gross loss
+          </small>
+        </div>
+      </div>
+
+      <div
+        className={`profitability-status ${
+          profitFactorSampleAdequate &&
+          (
+            summary
+              .profitFactor ===
+              null ||
+            Number(
+              summary
+                .profitFactor,
+            ) >= 1.5
+          )
+            ? "profitable"
+            : "not-profitable"
+        }`}
+      >
+        <div>
+          <span>
+            Profit factor rating
+          </span>
+
+          <strong
+            className={getProfitFactorClass(
+              profitFactorRating,
+            )}
+          >
+            {
+              profitFactorRating
+            }
+          </strong>
+        </div>
+
+        <div>
+          <span>
+            Profit factor
+          </span>
+
+          <strong>
+            {formatProfitFactor(
+              summary
+                .profitFactor,
+            )}
+          </strong>
+        </div>
+
+        <div>
+          <span>
+            Sample
+          </span>
+
+          <strong
+            className={
+              profitFactorSampleAdequate
+                ? "positive"
+                : "neutral"
+            }
+          >
+            {summary
+              .profitFactorSampleSize ??
+              0}
+            {" / "}
+            {summary
+              .profitFactorMinimumSample ??
+              20}
+          </strong>
+        </div>
+      </div>
+
+      <div className="analytics-primary-grid">
+        <article className="analytics-card">
+          <span>
+            Gross winning profit
+          </span>
+
+          <strong className="positive">
+            {formatMoney(
+              summary
+                .grossWinningProfit,
+            )}
+          </strong>
+
+          <small>
+            Total P/L from winning exits
+          </small>
+        </article>
+
+        <article className="analytics-card">
+          <span>
+            Gross losing amount
+          </span>
+
+          <strong className="negative">
+            {formatMoney(
+              -Math.abs(
+                Number(
+                  summary
+                    .grossLosingAmount,
+                ) ||
+                  0,
+              ),
+            )}
+          </strong>
+
+          <small>
+            Total magnitude of losing exits
+          </small>
+        </article>
+
+        <article className="analytics-card">
+          <span>
+            Profit factor
+          </span>
+
+          <strong
+            className={
+              summary
+                .profitFactor ===
+                null ||
+              Number(
+                summary
+                  .profitFactor,
+              ) >= 1
+                ? "positive"
+                : "negative"
+            }
+          >
+            {formatProfitFactor(
+              summary
+                .profitFactor,
+            )}
+          </strong>
+        </article>
+
+        <article className="analytics-card">
+          <span>
+            Rating
+          </span>
+
+          <strong
+            className={getProfitFactorClass(
+              summary
+                .profitFactorRating,
+            )}
+          >
+            {summary
+              .profitFactorRating ||
+              "NO DATA"}
+          </strong>
+        </article>
+
+        <article className="analytics-card">
+          <span>
+            Closed-trade sample
+          </span>
+
+          <strong>
+            {summary
+              .profitFactorSampleSize ??
+              0}
+          </strong>
+
+          <small>
+            Minimum for rating:{" "}
+            {summary
+              .profitFactorMinimumSample ??
+              20}
+          </small>
+        </article>
+
+        <article className="analytics-card">
+          <span>
+            Sample quality
+          </span>
+
+          <strong
+            className={
+              profitFactorSampleAdequate
+                ? "positive"
+                : "neutral"
+            }
+          >
+            {profitFactorSampleAdequate
+              ? "SUFFICIENT"
+              : "NOT ENOUGH DATA"}
           </strong>
         </article>
       </div>
@@ -755,17 +1041,14 @@ function ServerPerformancePanel({
               Number(
                 summary
                   .maximumConsecutiveLosses,
-              ) >
-              0
+              ) > 0
                 ? "negative"
                 : "neutral"
             }
           >
-            {
-              summary
-                .maximumConsecutiveLosses ??
-              0
-            }
+            {summary
+              .maximumConsecutiveLosses ??
+              0}
           </strong>
 
           <small>
@@ -783,17 +1066,14 @@ function ServerPerformancePanel({
               Number(
                 summary
                   .currentConsecutiveLosses,
-              ) >
-              0
+              ) > 0
                 ? "negative"
                 : "neutral"
             }
           >
-            {
-              summary
-                .currentConsecutiveLosses ??
-              0
-            }
+            {summary
+              .currentConsecutiveLosses ??
+              0}
           </strong>
         </article>
 
@@ -829,11 +1109,9 @@ function ServerPerformancePanel({
           </span>
 
           <strong>
-            {
-              summary
-                .breakEvenTrades ??
-              0
-            }
+            {summary
+              .breakEvenTrades ??
+              0}
           </strong>
         </article>
       </div>
@@ -881,11 +1159,9 @@ function ServerPerformancePanel({
           </strong>
 
           <small>
-            {
-              summary
-                .slippageBps ??
-              0
-            }{" "}
+            {summary
+              .slippageBps ??
+              0}{" "}
             bps assumption
           </small>
         </article>
