@@ -536,82 +536,69 @@ function App() {
    * RESET
    * =========================================================
    */
-  async function resetPaperPortfolio() {
-    const approved =
-      window.confirm(
-        "Reset the paper account to $300? This clears the existing paper portfolio.",
-      );
+async function resetPaperPortfolio() {
+  const approved =
+    window.confirm(
+      "Reset the paper account back to $300? This deletes its trade history.",
+    );
+
+  if (!approved) {
+    return;
+  }
+
+  setOrderLoading(
+    true,
+  );
+
+  setOrderMessage(
+    "",
+  );
+
+  try {
+    autoTrader
+      .disableAutoTrader();
+
+    const result =
+      await portfolio
+        .resetPortfolio(
+          300,
+        );
 
     if (
-      !approved
+      !result.success
     ) {
-      return;
-    }
-
-    setOrderLoadingSide(
-      "RESET",
-    );
-
-    setOrderMessage(
-      "",
-    );
-
-    try {
-      autoTrader
-        .disableAutoTrader?.();
-
-      const result =
-        await portfolio
-          .resetPortfolio(
-            300,
-          );
-
-      if (
-        !result.success
-      ) {
-        throw new Error(
-          result.message ||
-            "Could not reset the paper portfolio.",
-        );
-      }
-
-      autoTrader
-        .clearActivity?.();
-
-      riskManager
-        .clearEvents?.();
-
-      analyticsState
-        .resetEquityHistory?.();
-
-      await Promise.allSettled([
-        portfolioMarkets
-          .refresh?.(),
-
-        serverPerformance
-          .loadPerformance?.(),
-
-        serverActivity
-          .loadActivity?.(),
-      ]);
-
-      setOrderMessage(
+      throw new Error(
         result.message ||
-          "Paper portfolio reset successfully.",
-      );
-    } catch (
-      error
-    ) {
-      setOrderMessage(
-        error.message ||
           "Could not reset the paper portfolio.",
       );
-    } finally {
-      setOrderLoadingSide(
-        null,
-      );
     }
+
+    autoTrader
+      .clearActivity();
+
+    riskManager
+      .clearEvents();
+
+    analyticsState
+      .resetEquityHistory();
+
+    setOrderMessage(
+      result.message ||
+        "Paper portfolio reset successfully to $300.",
+    );
+  } catch (
+    error
+  ) {
+    setOrderMessage(
+      error.message ||
+        "Could not reset the paper portfolio.",
+    );
+  } finally {
+    setOrderLoading(
+      false,
+    );
   }
+}
 
   /*
    * =========================================================
