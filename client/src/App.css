@@ -4053,3 +4053,215 @@ body::-webkit-scrollbar-thumb:hover {
   }
 }
 
+/* =========================================================
+   TOKEN HOLDINGS
+   ========================================================= */
+
+.token-holdings-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(
+      2,
+      minmax(0, 1fr)
+    );
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.token-holding-card {
+  display: grid;
+  gap: 14px;
+
+  min-width: 0;
+
+  padding: 14px;
+
+  border: 1px solid #2b3139;
+  border-radius: 10px;
+
+  background: #111419;
+}
+
+.token-holding-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+
+  gap: 12px;
+}
+
+.token-holding-header > div {
+  display: grid;
+  gap: 4px;
+
+  min-width: 0;
+}
+
+.token-holding-symbol {
+  color: #ffffff;
+
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.token-holding-header small {
+  color: #68707c;
+
+  font-size: 9px;
+  font-weight: 700;
+
+  letter-spacing: 0.4px;
+}
+
+.token-holding-value {
+  color: #f0b90b;
+
+  font-size: 17px;
+  font-weight: 900;
+
+  text-align: right;
+}
+
+.token-holding-primary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 12px;
+
+  padding: 11px 12px;
+
+  border: 1px solid rgba(
+    240,
+    185,
+    11,
+    0.18
+  );
+
+  border-radius: 8px;
+
+  background: rgba(
+    240,
+    185,
+    11,
+    0.05
+  );
+}
+
+.token-holding-primary span {
+  color: #848e9c;
+
+  font-size: 10px;
+}
+
+.token-holding-primary strong {
+  color: #eaecef;
+
+  font-size: 13px;
+  font-weight: 800;
+
+  text-align: right;
+}
+
+.token-holding-details {
+  display: grid;
+
+  grid-template-columns:
+    repeat(
+      2,
+      minmax(0, 1fr)
+    );
+
+  gap: 8px;
+}
+
+.token-holding-details > div {
+  display: grid;
+
+  gap: 5px;
+
+  min-width: 0;
+
+  padding: 10px;
+
+  border: 1px solid #2b3139;
+  border-radius: 8px;
+
+  background: #0b0e11;
+}
+
+.token-holding-details span {
+  color: #68707c;
+
+  font-size: 9px;
+}
+
+.token-holding-details strong {
+  overflow-wrap: anywhere;
+
+  color: #eaecef;
+
+  font-size: 12px;
+}
+
+/* =========================================================
+   TOKEN HOLDINGS RESPONSIVE
+   ========================================================= */
+
+@media (max-width: 900px) {
+  .token-holdings-grid {
+    grid-template-columns:
+      1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .token-holding-card {
+    gap: 11px;
+
+    padding: 12px;
+  }
+
+  .token-holding-header {
+    align-items: center;
+  }
+
+  .token-holding-symbol {
+    font-size: 16px;
+  }
+
+  .token-holding-value {
+    font-size: 15px;
+  }
+
+  .token-holding-primary {
+    align-items: flex-start;
+
+    flex-direction: column;
+
+    gap: 5px;
+  }
+
+  .token-holding-primary strong {
+    width: 100%;
+
+    font-size: 14px;
+
+    text-align: left;
+  }
+
+  .token-holding-details {
+    grid-template-columns:
+      repeat(
+        2,
+        minmax(0, 1fr)
+      );
+  }
+}
+
+@media (max-width: 390px) {
+  .token-holding-details {
+    grid-template-columns:
+      1fr;
+  }
+}
