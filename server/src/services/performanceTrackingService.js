@@ -141,9 +141,7 @@ function normalizeEquitySnapshotRow(
 function timestampValue(
   value,
 ) {
-  if (
-    !value
-  ) {
+  if (!value) {
     return null;
   }
 
@@ -1232,9 +1230,21 @@ function calculateExpectancyMetrics(
   };
 }
 
+/*
+ * =========================================================
+ * PROFITABILITY UPGRADE #6
+ *
+ * PERFORMANCE BY COIN / TIMEFRAME
+ * =========================================================
+ *
+ * In addition to raw realized profit, each
+ * group now tracks estimated execution costs
+ * and cost-adjusted profit.
+ */
 function groupTradePerformance(
   trades,
   key,
+  slippageBps,
 ) {
   const groups =
     {};
@@ -1273,6 +1283,15 @@ function groupTradePerformance(
           0,
 
         fees:
+          0,
+
+        estimatedSlippage:
+          0,
+
+        totalTradingCosts:
+          0,
+
+        netProfitAfterCosts:
           0,
 
         grossWinningProfit:
@@ -1322,10 +1341,37 @@ function groupTradePerformance(
     group.realizedProfit +=
       profit;
 
-    group.fees +=
-      numberOrZero(
-        trade.fee,
+    const fee =
+      Math.abs(
+        numberOrZero(
+          trade.fee,
+        ),
       );
+
+    const estimatedSlippage =
+      calculateTradeSlippage(
+        trade,
+        slippageBps,
+      );
+
+    group.fees +=
+      fee;
+
+    group.estimatedSlippage +=
+      estimatedSlippage;
+
+    group.totalTradingCosts +=
+      fee +
+      estimatedSlippage;
+
+    /*
+     * realizedProfit already includes fees,
+     * so subtract only estimated slippage
+     * when calculating cost-adjusted profit.
+     */
+    group.netProfitAfterCosts +=
+      profit -
+      estimatedSlippage;
   }
 
   return Object.values(
@@ -1407,6 +1453,24 @@ function groupTradePerformance(
           averageProfit:
             group.trades > 0
               ? group.realizedProfit /
+                group.trades
+              : 0,
+
+          averageNetProfitAfterCosts:
+            group.trades > 0
+              ? group.netProfitAfterCosts /
+                group.trades
+              : 0,
+
+          averageFee:
+            group.trades > 0
+              ? group.fees /
+                group.trades
+              : 0,
+
+          averageEstimatedSlippage:
+            group.trades > 0
+              ? group.estimatedSlippage /
                 group.trades
               : 0,
 
@@ -1898,7 +1962,7 @@ export class PerformanceTrackingService {
       : [];
   }
 
-    async getSummary() {
+  async getSummary() {
     const [
       portfolio,
       trades,
@@ -2024,11 +2088,6 @@ export class PerformanceTrackingService {
         this.slippageBps,
       );
 
-    /*
-     * =====================================================
-     * 1 / 7 / 30 DAY PERFORMANCE
-     * =====================================================
-     */
     const performance1d =
       calculatePeriodPerformance({
         days:
@@ -2153,9 +2212,6 @@ export class PerformanceTrackingService {
 
       winRate,
 
-      /*
-       * PROFIT FACTOR
-       */
       profitFactor:
         profitFactorMetrics
           .profitFactor,
@@ -2184,9 +2240,6 @@ export class PerformanceTrackingService {
         profitFactorMetrics
           .minimumSample,
 
-      /*
-       * EXPECTANCY
-       */
       averageWinningTrade:
         expectancyMetrics
           .averageWinningTrade,
@@ -2241,22 +2294,12 @@ export class PerformanceTrackingService {
 
       realizedProfitToday,
 
-      /*
-       * =====================================================
-       * ROADMAP #5
-       *
-       * DAILY / 7 DAY / 30 DAY PERFORMANCE
-       * =====================================================
-       */
       performance1d,
 
       performance7d,
 
       performance30d,
 
-      /*
-       * FEES + SLIPPAGE
-       */
       grossTradingProfit,
 
       accountProfitAfterFees,
@@ -2292,9 +2335,6 @@ export class PerformanceTrackingService {
       slippageBps:
         this.slippageBps,
 
-      /*
-       * DRAWDOWN
-       */
       maximumDrawdownAmount:
         drawdown.amount,
 
@@ -2302,18 +2342,24 @@ export class PerformanceTrackingService {
         drawdown.percent,
 
       /*
-       * GROUP PERFORMANCE
+       * =====================================================
+       * ROADMAP #6
+       *
+       * PERFORMANCE BY COIN / TIMEFRAME
+       * =====================================================
        */
       bySymbol:
         groupTradePerformance(
           sellTrades,
           "symbol",
+          this.slippageBps,
         ),
 
       byTimeframe:
         groupTradePerformance(
           sellTrades,
           "timeframe",
+          this.slippageBps,
         ),
 
       equityStorage:
