@@ -27,7 +27,6 @@ import useBinanceMarket from "./hooks/useBinanceMarket";
 import useMarketPrices from "./hooks/useMarketPrices";
 import usePaperPortfolio from "./hooks/usePaperPortfolio";
 import usePortfolioAnalytics from "./hooks/usePortfolioAnalytics";
-import useRiskManager from "./hooks/useRiskManager";
 import useServerActivity from "./hooks/useServerActivity";
 import useServerPerformance from "./hooks/useServerPerformance";
 import useServerTradingEngine from "./hooks/useServerTradingEngine";

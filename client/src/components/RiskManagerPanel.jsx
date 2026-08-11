@@ -1,193 +1,452 @@
-function formatMoney(value) {
-  const number = Number(value);
+function formatMoney(
+  value,
+) {
+  const number =
+    Number(value);
 
-  if (!Number.isFinite(number)) {
+  if (
+    !Number.isFinite(
+      number,
+    )
+  ) {
     return "—";
   }
 
-  return number.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 2,
-  });
-}
-
-function formatTime(timestamp) {
-  if (!timestamp) {
-    return "—";
-  }
-
-  return new Date(timestamp).toLocaleTimeString(
+  return number.toLocaleString(
     "en-US",
     {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
+      style:
+        "currency",
+
+      currency:
+        "USD",
+
+      maximumFractionDigits:
+        2,
     },
   );
 }
 
-function RiskManagerPanel({ riskManager }) {
+function formatTime(
+  timestamp,
+) {
+  if (!timestamp) {
+    return "—";
+  }
+
+  return new Date(
+    timestamp,
+  ).toLocaleTimeString(
+    "en-US",
+    {
+      hour:
+        "2-digit",
+
+      minute:
+        "2-digit",
+
+      second:
+        "2-digit",
+    },
+  );
+}
+
+function numberOrFallback(
+  value,
+  fallback,
+) {
+  const number =
+    Number(value);
+
+  return Number.isFinite(
+    number,
+  )
+    ? number
+    : fallback;
+}
+
+function RiskManagerPanel({
+  serverEngine,
+}) {
   const {
-    settings,
-    status,
-    events,
-    tradesToday,
-    realizedProfitToday,
-    dailyLossReached,
-    tradeLimitReached,
-    canOpenTrade,
-    updateSetting,
-    toggleEnabled,
-    toggleEmergencyStop,
-    clearEvents,
-  } = riskManager;
+    engine,
+    loading,
+    error,
+    saveSettings,
+    loadState,
+  } =
+    serverEngine;
+
+  const settings =
+    engine?.settings ||
+    {};
+
+  const enabled =
+    Boolean(
+      settings.enabled,
+    );
+
+  const emergencyStop =
+    Boolean(
+      settings
+        .emergencyStop,
+    );
+
+  const trailingStopEnabled =
+    Boolean(
+      settings
+        .trailingStopEnabled,
+    );
+
+  const status =
+    engine?.status ||
+    "Unavailable";
+
+  const lastRiskEvent =
+    engine
+      ?.lastRiskEvent ||
+    null;
+
+  async function updateSetting(
+    name,
+    value,
+  ) {
+    if (
+      typeof saveSettings !==
+      "function"
+    ) {
+      return;
+    }
+
+    await saveSettings({
+      ...settings,
+
+      [name]:
+        value,
+    });
+  }
+
+  async function toggleEngine() {
+    await updateSetting(
+      "enabled",
+      !enabled,
+    );
+  }
+
+  async function toggleEmergencyStop() {
+    await updateSetting(
+      "emergencyStop",
+      !emergencyStop,
+    );
+  }
+
+  async function toggleTrailingStop(
+    event,
+  ) {
+    await updateSetting(
+      "trailingStopEnabled",
+      event.target.checked,
+    );
+  }
+
+  if (
+    loading &&
+    !engine
+  ) {
+    return (
+      <section className="panel risk-manager-panel">
+        <p>
+          Loading server risk controls…
+        </p>
+      </section>
+    );
+  }
+
+  if (!engine) {
+    return (
+      <section className="panel risk-manager-panel">
+        <p className="scanner-error">
+          {error ||
+            "Server risk controls are unavailable."}
+        </p>
+      </section>
+    );
+  }
 
   return (
     <section className="panel risk-manager-panel">
       <div className="panel-header">
         <div>
           <p className="panel-eyebrow">
-            CAPITAL PROTECTION
+            SERVER CAPITAL PROTECTION
           </p>
 
-          <h2>Risk Manager</h2>
+          <h2>
+            Risk Manager
+          </h2>
+
+          <small>
+            Controlled by Trading Engine 2.0
+          </small>
         </div>
 
         <button
           type="button"
           className={
-            settings.enabled
+            enabled
               ? "risk-toggle enabled"
               : "risk-toggle"
           }
-          onClick={toggleEnabled}
+          disabled={
+            loading
+          }
+          onClick={
+            toggleEngine
+          }
         >
-          {settings.enabled ? "Enabled" : "Disabled"}
+          {enabled
+            ? "Enabled"
+            : "Disabled"}
         </button>
       </div>
 
       <div className="risk-status-row">
         <span
           className={
-            canOpenTrade
+            enabled &&
+            !emergencyStop
               ? "risk-status-dot safe"
               : "risk-status-dot blocked"
           }
         />
 
-        <strong>{status}</strong>
+        <strong>
+          {emergencyStop
+            ? "Emergency stop active"
+            : status}
+        </strong>
 
         <span>
-          New entries:{" "}
-          {canOpenTrade ? "Allowed" : "Blocked"}
+          Automated trading:{" "}
+
+          {enabled &&
+          !emergencyStop
+            ? "Allowed"
+            : "Blocked"}
         </span>
       </div>
 
       <div className="risk-settings-grid">
         <label>
-          <span>Stop loss</span>
+          <span>
+            Stop loss
+          </span>
 
           <div className="risk-input-unit">
             <input
               type="number"
               min="0.1"
               step="0.1"
-              value={settings.stopLossPercent}
-              onChange={(event) =>
+              disabled={
+                loading
+              }
+              value={
+                numberOrFallback(
+                  settings
+                    .stopLossPercent,
+                  1.5,
+                )
+              }
+              onChange={(
+                event,
+              ) =>
                 updateSetting(
                   "stopLossPercent",
-                  Number(event.target.value),
+                  Number(
+                    event
+                      .target
+                      .value,
+                  ),
                 )
               }
             />
 
-            <small>%</small>
+            <small>
+              %
+            </small>
           </div>
         </label>
 
         <label>
-          <span>Take profit</span>
+          <span>
+            Take profit
+          </span>
 
           <div className="risk-input-unit">
             <input
               type="number"
               min="0.1"
               step="0.1"
-              value={settings.takeProfitPercent}
-              onChange={(event) =>
+              disabled={
+                loading
+              }
+              value={
+                numberOrFallback(
+                  settings
+                    .takeProfitPercent,
+                  3,
+                )
+              }
+              onChange={(
+                event,
+              ) =>
                 updateSetting(
                   "takeProfitPercent",
-                  Number(event.target.value),
+                  Number(
+                    event
+                      .target
+                      .value,
+                  ),
                 )
               }
             />
 
-            <small>%</small>
+            <small>
+              %
+            </small>
           </div>
         </label>
 
         <label>
-          <span>Trailing stop</span>
+          <span>
+            Trailing stop
+          </span>
 
           <div className="risk-input-unit">
             <input
               type="number"
               min="0.1"
               step="0.1"
-              disabled={!settings.trailingStopEnabled}
-              value={settings.trailingStopPercent}
-              onChange={(event) =>
+              disabled={
+                loading ||
+                !trailingStopEnabled
+              }
+              value={
+                numberOrFallback(
+                  settings
+                    .trailingStopPercent,
+                  1,
+                )
+              }
+              onChange={(
+                event,
+              ) =>
                 updateSetting(
                   "trailingStopPercent",
-                  Number(event.target.value),
+                  Number(
+                    event
+                      .target
+                      .value,
+                  ),
                 )
               }
             />
 
-            <small>%</small>
+            <small>
+              %
+            </small>
           </div>
         </label>
 
         <label>
-          <span>Daily loss limit</span>
-
-          <div className="risk-input-unit">
-            <input
-              type="number"
-              min="1"
-              step="10"
-              value={settings.dailyLossLimit}
-              onChange={(event) =>
-                updateSetting(
-                  "dailyLossLimit",
-                  Number(event.target.value),
-                )
-              }
-            />
-
-            <small>USD</small>
-          </div>
-        </label>
-
-        <label>
-          <span>Maximum daily trades</span>
+          <span>
+            Daily loss limit
+          </span>
 
           <div className="risk-input-unit">
             <input
               type="number"
               min="1"
               step="1"
-              value={settings.maximumTradesPerDay}
-              onChange={(event) =>
+              disabled={
+                loading
+              }
+              value={
+                numberOrFallback(
+                  settings
+                    .dailyLossLimit,
+                  30,
+                )
+              }
+              onChange={(
+                event,
+              ) =>
                 updateSetting(
-                  "maximumTradesPerDay",
-                  Number(event.target.value),
+                  "dailyLossLimit",
+                  Number(
+                    event
+                      .target
+                      .value,
+                  ),
                 )
               }
             />
 
-            <small>TRADES</small>
+            <small>
+              USD
+            </small>
+          </div>
+        </label>
+
+        <label>
+          <span>
+            Maximum daily trades
+          </span>
+
+          <div className="risk-input-unit">
+            <input
+              type="number"
+              min="0"
+              step="1"
+              disabled={
+                loading
+              }
+              value={
+                numberOrFallback(
+                  settings
+                    .maximumTradesPerDay,
+                  0,
+                )
+              }
+              onChange={(
+                event,
+              ) =>
+                updateSetting(
+                  "maximumTradesPerDay",
+                  Math.max(
+                    Math.floor(
+                      Number(
+                        event
+                          .target
+                          .value,
+                      ) ||
+                        0,
+                    ),
+                    0,
+                  ),
+                )
+              }
+            />
+
+            <small>
+              {Number(
+                settings
+                  .maximumTradesPerDay,
+              ) ===
+              0
+                ? "UNLIMITED"
+                : "TRADES"}
+            </small>
           </div>
         </label>
       </div>
@@ -195,65 +454,87 @@ function RiskManagerPanel({ riskManager }) {
       <label className="trailing-toggle-row">
         <input
           type="checkbox"
-          checked={settings.trailingStopEnabled}
-          onChange={(event) =>
-            updateSetting(
-              "trailingStopEnabled",
-              event.target.checked,
-            )
+          checked={
+            trailingStopEnabled
+          }
+          disabled={
+            loading
+          }
+          onChange={
+            toggleTrailingStop
           }
         />
 
-        <span>Enable trailing stop</span>
+        <span>
+          Enable trailing stop
+        </span>
       </label>
 
       <div className="risk-summary">
         <article>
-          <span>Trades today</span>
-          <strong>{tradesToday}</strong>
-        </article>
-
-        <article>
-          <span>Realized P/L today</span>
+          <span>
+            Engine status
+          </span>
 
           <strong
             className={
-              realizedProfitToday > 0
-                ? "positive"
-                : realizedProfitToday < 0
-                  ? "negative"
+              emergencyStop
+                ? "negative"
+                : enabled
+                  ? "positive"
                   : "neutral"
             }
           >
-            {formatMoney(realizedProfitToday)}
+            {emergencyStop
+              ? "STOPPED"
+              : status}
           </strong>
         </article>
 
         <article>
-          <span>Daily loss gate</span>
+          <span>
+            Stop loss
+          </span>
 
-          <strong
-            className={
-              dailyLossReached
-                ? "negative"
-                : "positive"
-            }
-          >
-            {dailyLossReached ? "Reached" : "Clear"}
+          <strong>
+            {numberOrFallback(
+              settings
+                .stopLossPercent,
+              0,
+            ).toFixed(
+              2,
+            )}
+            %
           </strong>
         </article>
 
         <article>
-          <span>Trade-count gate</span>
+          <span>
+            Take profit
+          </span>
 
-          <strong
-            className={
-              tradeLimitReached
-                ? "negative"
-                : "positive"
-            }
-          >
-            {tradeLimitReached ? "Reached" : "Clear"}
+          <strong>
+            {numberOrFallback(
+              settings
+                .takeProfitPercent,
+              0,
+            ).toFixed(
+              2,
+            )}
+            %
+          </strong>
+        </article>
+
+        <article>
+          <span>
+            Daily loss limit
+          </span>
+
+          <strong>
+            {formatMoney(
+              settings
+                .dailyLossLimit,
+            )}
           </strong>
         </article>
       </div>
@@ -261,61 +542,95 @@ function RiskManagerPanel({ riskManager }) {
       <button
         type="button"
         className={
-          settings.emergencyStop
+          emergencyStop
             ? "emergency-stop-button active"
             : "emergency-stop-button"
         }
-        onClick={toggleEmergencyStop}
+        disabled={
+          loading
+        }
+        onClick={
+          toggleEmergencyStop
+        }
       >
-        {settings.emergencyStop
+        {emergencyStop
           ? "Release Emergency Stop"
           : "Activate Emergency Stop"}
       </button>
 
       <div className="risk-section-heading">
-        <h3>Risk events</h3>
+        <h3>
+          Latest server risk event
+        </h3>
 
         <button
           type="button"
           className="clear-risk-events"
-          onClick={clearEvents}
+          disabled={
+            loading
+          }
+          onClick={() =>
+            loadState?.()
+          }
         >
-          Clear
+          Refresh
         </button>
       </div>
 
       <div className="risk-events-list">
-        {events.length > 0 ? (
-          events.slice(0, 20).map((event) => (
-            <article
-              className="risk-event-row"
-              key={event.id}
+        {lastRiskEvent ? (
+          <article className="risk-event-row">
+            <strong
+              className={
+                lastRiskEvent
+                  .executed
+                  ? "negative"
+                  : "neutral"
+              }
             >
-              <strong
-                className={
-                  event.executed
-                    ? "negative"
-                    : "neutral"
-                }
-              >
-                {event.type}
-              </strong>
+              {lastRiskEvent
+                .type ||
+                "RISK EVENT"}
+            </strong>
 
-              <span>{event.symbol}</span>
+            <span>
+              {lastRiskEvent
+                .symbol ||
+                "—"}
+            </span>
 
-              <span>{formatMoney(event.price)}</span>
+            <span>
+              {formatMoney(
+                lastRiskEvent
+                  .price,
+              )}
+            </span>
 
-              <time>{formatTime(event.timestamp)}</time>
+            <time>
+              {formatTime(
+                lastRiskEvent
+                  .timestamp,
+              )}
+            </time>
 
-              <p>{event.message}</p>
-            </article>
-          ))
+            <p>
+              {lastRiskEvent
+                .message ||
+                "Server risk event recorded."}
+            </p>
+          </article>
         ) : (
           <p className="empty-state">
-            No risk exits have been triggered.
+            No server risk exits have been recorded.
           </p>
         )}
       </div>
+
+      {error && (
+        <p className="scanner-error">
+          {error}
+        </p>
+      )}
     </section>
   );
 }
