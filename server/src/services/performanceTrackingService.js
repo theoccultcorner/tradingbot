@@ -1,4 +1,8 @@
 import {
+  database,
+} from "../config/database.js";
+
+import {
   getPaperPortfolio,
 } from "./paperPortfolioService.js";
 
@@ -34,6 +38,105 @@ const DEFAULT_SLIPPAGE_BPS =
  */
 const MIN_PROFIT_FACTOR_SAMPLE =
   20;
+
+/*
+ * =========================================================
+ * PERSISTENT EQUITY SNAPSHOTS
+ * =========================================================
+ *
+ * Equity history used to live only in RAM.
+ *
+ * That meant every Render restart erased the
+ * history used to calculate maximum drawdown.
+ *
+ * Store snapshots in the same persistent
+ * SQLite database as the paper portfolio.
+ */
+database.exec(`
+  CREATE TABLE IF NOT EXISTS equity_snapshots (
+    id TEXT PRIMARY KEY,
+    cash REAL NOT NULL,
+    market_value REAL NOT NULL,
+    equity REAL NOT NULL,
+    total_profit REAL NOT NULL,
+    total_return_percent REAL NOT NULL,
+    realized_profit REAL NOT NULL,
+    unrealized_profit REAL NOT NULL,
+    open_position_count INTEGER NOT NULL DEFAULT 0,
+    symbol TEXT,
+    timeframe TEXT,
+    timestamp INTEGER NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_equity_snapshots_timestamp
+  ON equity_snapshots(timestamp);
+`);
+
+function normalizeEquitySnapshotRow(
+  row,
+) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id:
+      row.id,
+
+    cash:
+      numberOrZero(
+        row.cash,
+      ),
+
+    marketValue:
+      numberOrZero(
+        row.market_value,
+      ),
+
+    equity:
+      numberOrZero(
+        row.equity,
+      ),
+
+    totalProfit:
+      numberOrZero(
+        row.total_profit,
+      ),
+
+    totalReturnPercent:
+      numberOrZero(
+        row.total_return_percent,
+      ),
+
+    realizedProfit:
+      numberOrZero(
+        row.realized_profit,
+      ),
+
+    unrealizedProfit:
+      numberOrZero(
+        row.unrealized_profit,
+      ),
+
+    openPositionCount:
+      numberOrZero(
+        row.open_position_count,
+      ),
+
+    symbol:
+      row.symbol ||
+      null,
+
+    timeframe:
+      row.timeframe ||
+      null,
+
+    timestamp:
+      numberOrZero(
+        row.timestamp,
+      ),
+  };
+}
 
 function timestampValue(
   value,
@@ -1114,8 +1217,23 @@ export class PerformanceTrackingService {
         slippageBps,
       );
 
+    const latestStoredSnapshot =
+      database
+        .prepare(
+          `
+            SELECT timestamp
+            FROM equity_snapshots
+            ORDER BY timestamp DESC
+            LIMIT 1
+          `,
+        )
+        .get();
+
     this.lastSnapshotTime =
-      0;
+      numberOrZero(
+        latestStoredSnapshot
+          ?.timestamp,
+      );
 
     this.latestPrices =
       {};
@@ -1123,8 +1241,27 @@ export class PerformanceTrackingService {
     this.snapshotLock =
       false;
 
-    this.equityHistory =
-      [];
+    /*
+     * Keep the database bounded.
+     *
+     * Only the newest maxEquityPoints
+     * snapshots are retained.
+     */
+    database
+      .prepare(
+        `
+          DELETE FROM equity_snapshots
+          WHERE rowid NOT IN (
+            SELECT rowid
+            FROM equity_snapshots
+            ORDER BY timestamp DESC, rowid DESC
+            LIMIT ?
+          )
+        `,
+      )
+      .run(
+        this.maxEquityPoints,
+      );
   }
 
   async handleMarketUpdate(
@@ -1335,22 +1472,65 @@ export class PerformanceTrackingService {
           Date.now(),
       };
 
-      this.equityHistory.push(
-        snapshot,
-      );
+      /*
+       * Persist the snapshot so maximum
+       * drawdown survives Render restarts.
+       */
+      database
+        .transaction(
+          () => {
+            database
+              .prepare(
+                `
+                  INSERT INTO equity_snapshots (
+                    id,
+                    cash,
+                    market_value,
+                    equity,
+                    total_profit,
+                    total_return_percent,
+                    realized_profit,
+                    unrealized_profit,
+                    open_position_count,
+                    symbol,
+                    timeframe,
+                    timestamp
+                  )
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                `,
+              )
+              .run(
+                snapshot.id,
+                snapshot.cash,
+                snapshot.marketValue,
+                snapshot.equity,
+                snapshot.totalProfit,
+                snapshot.totalReturnPercent,
+                snapshot.realizedProfit,
+                snapshot.unrealizedProfit,
+                snapshot.openPositionCount,
+                snapshot.symbol,
+                snapshot.timeframe,
+                snapshot.timestamp,
+              );
 
-      if (
-        this.equityHistory
-          .length >
-        this.maxEquityPoints
-      ) {
-        this.equityHistory.splice(
-          0,
-          this.equityHistory
-            .length -
-            this.maxEquityPoints,
-        );
-      }
+            database
+              .prepare(
+                `
+                  DELETE FROM equity_snapshots
+                  WHERE rowid NOT IN (
+                    SELECT rowid
+                    FROM equity_snapshots
+                    ORDER BY timestamp DESC, rowid DESC
+                    LIMIT ?
+                  )
+                `,
+              )
+              .run(
+                this.maxEquityPoints,
+              );
+          },
+        )();
 
       this.lastSnapshotTime =
         snapshot.timestamp;
@@ -1379,18 +1559,37 @@ export class PerformanceTrackingService {
         this.maxEquityPoints,
       );
 
-    return this
-      .equityHistory
-      .slice(
-        -safeLimit,
-      )
+    const rows =
+      database
+        .prepare(
+          `
+            SELECT
+              id,
+              cash,
+              market_value,
+              equity,
+              total_profit,
+              total_return_percent,
+              realized_profit,
+              unrealized_profit,
+              open_position_count,
+              symbol,
+              timeframe,
+              timestamp
+            FROM equity_snapshots
+            ORDER BY timestamp DESC, rowid DESC
+            LIMIT ?
+          `,
+        )
+        .all(
+          safeLimit,
+        );
+
+    return rows
       .map(
-        (
-          point,
-        ) => ({
-          ...point,
-        }),
-      );
+        normalizeEquitySnapshotRow,
+      )
+      .reverse();
   }
 
   async getTrades(
@@ -1774,7 +1973,7 @@ export class PerformanceTrackingService {
         ),
 
       equityStorage:
-        "memory",
+        "sqlite",
 
       equityPointCount:
         equityHistory.length,
@@ -1893,8 +2092,14 @@ export class PerformanceTrackingService {
   }
 
   clearEquityHistory() {
-    this.equityHistory =
-      [];
+    const result =
+      database
+        .prepare(
+          `
+            DELETE FROM equity_snapshots
+          `,
+        )
+        .run();
 
     this.lastSnapshotTime =
       0;
@@ -1902,6 +2107,12 @@ export class PerformanceTrackingService {
     return {
       success:
         true,
+
+      deletedSnapshots:
+        Number(
+          result.changes,
+        ) ||
+        0,
 
       clearedAt:
         Date.now(),
