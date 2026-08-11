@@ -285,6 +285,63 @@ function PerformanceTable({
   );
 }
 
+function PeriodPerformanceCard({
+  label,
+  data,
+}) {
+  const period =
+    data ||
+    {};
+
+  const profit =
+    Number(
+      period.profit,
+    );
+
+  const returnPercent =
+    Number(
+      period.returnPercent,
+    );
+
+  return (
+    <article className="analytics-card">
+      <span>
+        {label}
+      </span>
+
+      <strong
+        className={getClass(
+          profit,
+        )}
+      >
+        {formatMoney(
+          profit,
+        )}
+      </strong>
+
+      <small>
+        {formatPercent(
+          returnPercent,
+        )}
+        {" · "}
+        {period.closedTrades ??
+          0}
+        {" closed · "}
+        {formatPercent(
+          period.winRate,
+        )}
+        {" win rate"}
+      </small>
+
+      <small>
+        {period.completePeriod
+          ? "Full period available"
+          : "Partial history"}
+      </small>
+    </article>
+  );
+}
+
 function ServerPerformancePanel({
   performance,
 }) {
@@ -647,6 +704,48 @@ function ServerPerformancePanel({
             }
           </strong>
         </article>
+      </div>
+
+      {/* ===================================================
+          ROLLING PERFORMANCE — ROADMAP #8
+          =================================================== */}
+
+      <div className="portfolio-section-heading">
+        <div>
+          <h3>
+            Rolling Performance
+          </h3>
+
+          <small>
+            Account performance over the previous 1, 7, and 30 days
+          </small>
+        </div>
+      </div>
+
+      <div className="analytics-primary-grid">
+        <PeriodPerformanceCard
+          label="1-day performance"
+          data={
+            summary
+              .performance1d
+          }
+        />
+
+        <PeriodPerformanceCard
+          label="7-day performance"
+          data={
+            summary
+              .performance7d
+          }
+        />
+
+        <PeriodPerformanceCard
+          label="30-day performance"
+          data={
+            summary
+              .performance30d
+          }
+        />
       </div>
 
       {/* ===================================================
@@ -1261,6 +1360,71 @@ function ServerPerformancePanel({
             []
           }
         />
+
+        {/* ===============================================
+            ROADMAP #8 — STRATEGY INTELLIGENCE
+            =============================================== */}
+
+        <PerformanceTable
+          title="Performance by strategy"
+          rows={
+            summary
+              .byStrategy ||
+            []
+          }
+        />
+
+        <PerformanceTable
+          title="Performance by signal label"
+          rows={
+            summary
+              .bySignalLabel ||
+            []
+          }
+        />
+
+        <PerformanceTable
+          title="Performance by confidence"
+          rows={
+            summary
+              .byConfidenceBucket ||
+            []
+          }
+        />
+
+        <PerformanceTable
+          title="Performance by score"
+          rows={
+            summary
+              .byScoreBucket ||
+            []
+          }
+        />
+
+        <PerformanceTable
+          title="Performance by exit type"
+          rows={
+            summary
+              .byExitType ||
+            []
+          }
+        />
+      </div>
+
+      <div className="performance-note">
+        <span>
+          Strategy breakdown scope
+        </span>
+
+        <strong>
+          {summary
+            .strategyBreakdownScope ||
+            "CLOSED_TRADE_EXIT_METADATA"}
+        </strong>
+
+        <small>
+          Strategy tables use metadata attached to closed SELL executions. Older trades may appear as Unknown if they were created before metadata persistence was enabled.
+        </small>
       </div>
 
       {error && (
