@@ -31,6 +31,14 @@ const MAX_TRADES = 50;
 
 const MAX_DEPTH_LEVELS = 10;
 
+/*
+ * Limit expensive full-state cloning, WebSocket
+ * broadcasting, and downstream async processing.
+ *
+ * 250 ms = at most 4 full publishes per second.
+ */
+const PUBLISH_INTERVAL_MS = 250;
+
 function getMaximumCandles(
   timeframe,
 ) {
@@ -333,6 +341,26 @@ export class BinanceMarketDataService {
     this.reconnectAttempts =
       0;
 
+    /*
+     * Publish throttling / backpressure.
+     *
+     * Binance can send many messages per second.
+     * We keep internal state current immediately,
+     * but only clone and publish the full state at
+     * a controlled rate.
+     */
+    this.publishTimer =
+      null;
+
+    this.publishPending =
+      false;
+
+    this.publishInFlight =
+      false;
+
+    this.lastPublishTime =
+      0;
+
     this.stopped =
       true;
   }
@@ -375,6 +403,16 @@ export class BinanceMarketDataService {
 
     this.reconnectTimer =
       null;
+
+    clearTimeout(
+      this.publishTimer,
+    );
+
+    this.publishTimer =
+      null;
+
+    this.publishPending =
+      false;
 
     const socket =
       this.socket;
@@ -450,7 +488,9 @@ export class BinanceMarketDataService {
     this.state.updatedAt =
       Date.now();
 
-    this.publish();
+    this.publish({
+      immediate: true,
+    });
   }
 
   async changeMarket({
@@ -718,7 +758,7 @@ export class BinanceMarketDataService {
             this.state
               .candles
               .length -
-              1
+            1
           ];
 
       if (
@@ -916,7 +956,7 @@ export class BinanceMarketDataService {
          */
         if (
           this.socket !==
-          socket
+            socket
         ) {
           return;
         }
@@ -955,7 +995,7 @@ export class BinanceMarketDataService {
          */
         if (
           this.socket !==
-          socket
+            socket
         ) {
           return;
         }
@@ -1088,6 +1128,11 @@ export class BinanceMarketDataService {
     this.state.updatedAt =
       Date.now();
 
+    /*
+     * Do not clone/broadcast the entire market
+     * state for every raw Binance message.
+     * publish() coalesces bursts into one update.
+     */
     this.publish();
   }
 
@@ -1345,15 +1390,136 @@ export class BinanceMarketDataService {
         : null;
   }
 
-  publish() {
+  publish({
+    immediate = false,
+  } = {}) {
     if (
       typeof this
-        .onUpdate ===
+        .onUpdate !==
       "function"
     ) {
-      this.onUpdate(
-        this.getState(),
+      return;
+    }
+
+    /*
+     * Mark that consumers need the latest state.
+     * Multiple Binance messages can collapse into
+     * a single publish.
+     */
+    this.publishPending =
+      true;
+
+    /*
+     * Never start another expensive update while
+     * the previous async onUpdate() is still
+     * running. This provides backpressure and
+     * prevents a growing Promise/task backlog.
+     */
+    if (
+      this.publishInFlight
+    ) {
+      return;
+    }
+
+    if (
+      immediate
+    ) {
+      clearTimeout(
+        this.publishTimer,
       );
+
+      this.publishTimer =
+        null;
+
+      void this
+        .flushPublish();
+
+      return;
+    }
+
+    if (
+      this.publishTimer
+    ) {
+      return;
+    }
+
+    const elapsed =
+      Date.now() -
+      this.lastPublishTime;
+
+    const delay =
+      Math.max(
+        PUBLISH_INTERVAL_MS -
+          elapsed,
+        0,
+      );
+
+    this.publishTimer =
+      setTimeout(
+        () => {
+          this.publishTimer =
+            null;
+
+          void this
+            .flushPublish();
+        },
+        delay,
+      );
+  }
+
+  async flushPublish() {
+    if (
+      this.publishInFlight ||
+      !this.publishPending ||
+      typeof this
+        .onUpdate !==
+        "function"
+    ) {
+      return;
+    }
+
+    this.publishPending =
+      false;
+
+    this.publishInFlight =
+      true;
+
+    this.lastPublishTime =
+      Date.now();
+
+    try {
+      /*
+       * This is the expensive operation:
+       * structuredClone() copies candles,
+       * indicators, trades, depth, and signal.
+       * It now happens at a controlled rate.
+       */
+      const snapshot =
+        this.getState();
+
+      await this.onUpdate(
+        snapshot,
+      );
+    } catch (error) {
+      console.error(
+        "Market update consumer failed:",
+        error?.message ||
+          error,
+      );
+    } finally {
+      this.publishInFlight =
+        false;
+
+      /*
+       * If Binance changed state while the previous
+       * update was running, schedule exactly one more
+       * publish for the newest state.
+       */
+      if (
+        this.publishPending
+      ) {
+        this.publish();
+      }
     }
   }
 }
