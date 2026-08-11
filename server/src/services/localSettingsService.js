@@ -15,11 +15,30 @@ const currentDirectory =
     currentFile,
   );
 
+/*
+ * =========================================================
+ * PERSISTENT SETTINGS STORAGE
+ * =========================================================
+ *
+ * On Render:
+ *
+ *   /var/data
+ *
+ * is the persistent disk mount.
+ *
+ * Locally:
+ *
+ *   server/data
+ *
+ * continues to be used.
+ */
 const DATA_DIRECTORY =
-  path.resolve(
-    currentDirectory,
-    "../../data",
-  );
+  process.env.RENDER
+    ? "/var/data"
+    : path.resolve(
+        currentDirectory,
+        "../../data",
+      );
 
 const SETTINGS_FILE =
   path.join(
@@ -49,7 +68,8 @@ async function ensureDataDirectory() {
   await fs.mkdir(
     DATA_DIRECTORY,
     {
-      recursive: true,
+      recursive:
+        true,
     },
   );
 }
@@ -58,7 +78,8 @@ function cloneValue(
   value,
 ) {
   if (
-    value === undefined
+    value ===
+    undefined
   ) {
     return undefined;
   }
@@ -390,7 +411,8 @@ async function writeSettingsFileInternal(
   await fs.rm(
     SETTINGS_FILE,
     {
-      force: true,
+      force:
+        true,
     },
   );
 
@@ -410,7 +432,8 @@ async function writeSettingsFileInternal(
       await fs.rm(
         uniqueTempFile,
         {
-          force: true,
+          force:
+            true,
         },
       );
     } catch {
@@ -424,7 +447,10 @@ async function writeSettingsFileInternal(
 function cryptoRandomSuffix() {
   return Math.random()
     .toString(36)
-    .slice(2, 10);
+    .slice(
+      2,
+      10,
+    );
 }
 
 /*
