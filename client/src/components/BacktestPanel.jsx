@@ -172,7 +172,7 @@ function BacktestPanel({
       const response =
         await fetch(
           serverUrl(
-            "/api/backtests/run",
+            "/api/backtest/run",
           ),
           {
             method:
@@ -589,9 +589,7 @@ function BacktestPanel({
                 Max drawdown
               </span>
 
-              <strong
-                className="negative"
-              >
+              <strong className="negative">
                 {Number.isFinite(
                   Number(
                     result.maximumDrawdownPercent,
@@ -637,20 +635,23 @@ function BacktestPanel({
             {result.id ? (
               <>
                 Saved as backtest{" "}
+
                 <strong>
                   {result.id}
                 </strong>
+
                 .{" "}
               </>
             ) : null}
 
             Tested{" "}
+
             {Number(
               result.candleCount ||
                 0,
             )}{" "}
-            candles with Strategy
-            Engine 2.0.
+
+            candles with Strategy Engine 2.0.
           </p>
         </>
       )}
