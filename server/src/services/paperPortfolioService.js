@@ -8,6 +8,127 @@ const DEFAULT_STARTING_CASH =
 const DEFAULT_FEE_RATE =
   0.001;
 
+/*
+ * =========================================================
+ * ROADMAP #7
+ *
+ * PERSISTENT TRADE METADATA
+ * =========================================================
+ *
+ * Trading Engine 2.0 attaches strategy,
+ * signal label, score, confidence, exit
+ * reason, and other context to each order.
+ *
+ * Preserve that metadata in SQLite so the
+ * performance service can later group
+ * historical results by strategy.
+ */
+function ensureTradeMetadataColumn() {
+  const tradesTable =
+    database
+      .prepare(
+        `
+          SELECT name
+          FROM sqlite_master
+          WHERE
+            type = 'table'
+            AND name = ?
+        `,
+      )
+      .get(
+        "trades",
+      );
+
+  if (
+    !tradesTable
+  ) {
+    return;
+  }
+
+  const columns =
+    database
+      .prepare(
+        `
+          PRAGMA table_info(trades)
+        `,
+      )
+      .all();
+
+  const hasMetadataColumn =
+    columns.some(
+      (
+        column,
+      ) =>
+        column.name ===
+        "metadata_json",
+    );
+
+  if (
+    !hasMetadataColumn
+  ) {
+    database.exec(`
+      ALTER TABLE trades
+      ADD COLUMN metadata_json TEXT;
+    `);
+  }
+}
+
+ensureTradeMetadataColumn();
+
+function parseMetadata(
+  value,
+) {
+  if (!value) {
+    return {};
+  }
+
+  if (
+    typeof value ===
+    "object"
+  ) {
+    return value;
+  }
+
+  try {
+    const parsed =
+      JSON.parse(
+        value,
+      );
+
+    return (
+      parsed &&
+      typeof parsed ===
+        "object" &&
+      !Array.isArray(
+        parsed,
+      )
+    )
+      ? parsed
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function serializeMetadata(
+  value,
+) {
+  try {
+    return JSON.stringify(
+      value &&
+      typeof value ===
+        "object" &&
+      !Array.isArray(
+        value,
+      )
+        ? value
+        : {},
+    );
+  } catch {
+    return "{}";
+  }
+}
+
 function round(
   value,
   decimals = 8,
@@ -212,54 +333,115 @@ function loadTrades(
   return rows.map(
     (
       row,
-    ) => ({
-      id:
-        row.id,
+    ) => {
+      const metadata =
+        parseMetadata(
+          row.metadata_json,
+        );
 
-      symbol:
-        row.symbol,
+      return {
+        id:
+          row.id,
 
-      timeframe:
-        row.timeframe ||
-        null,
+        symbol:
+          row.symbol,
 
-      side:
-        row.side,
+        timeframe:
+          row.timeframe ||
+          metadata.timeframe ||
+          null,
 
-      quantity:
-        Number(
-          row.quantity,
-        ),
+        side:
+          row.side,
 
-      price:
-        Number(
-          row.price,
-        ),
+        quantity:
+          Number(
+            row.quantity,
+          ),
 
-      grossValue:
-        Number(
-          row.gross_value,
-        ),
+        price:
+          Number(
+            row.price,
+          ),
 
-      fee:
-        Number(
-          row.fee,
-        ),
+        grossValue:
+          Number(
+            row.gross_value,
+          ),
 
-      realizedProfit:
-        Number(
-          row.realized_profit,
-        ),
+        fee:
+          Number(
+            row.fee,
+          ),
 
-      source:
-        row.source ||
-        null,
+        realizedProfit:
+          Number(
+            row.realized_profit,
+          ),
 
-      timestamp:
-        Number(
-          row.timestamp,
-        ),
-    }),
+        source:
+          row.source ||
+          metadata.source ||
+          null,
+
+        /*
+         * Keep the complete metadata object.
+         */
+        metadata,
+
+        /*
+         * Frequently used strategy fields are
+         * also exposed at the top level for
+         * performance/reporting convenience.
+         */
+        strategy:
+          metadata.strategy ||
+          null,
+
+        signalAction:
+          metadata.signalAction ||
+          null,
+
+        label:
+          metadata.label ||
+          null,
+
+        score:
+          Number.isFinite(
+            Number(
+              metadata.score,
+            ),
+          )
+            ? Number(
+                metadata.score,
+              )
+            : null,
+
+        confidence:
+          Number.isFinite(
+            Number(
+              metadata.confidence,
+            ),
+          )
+            ? Number(
+                metadata.confidence,
+              )
+            : null,
+
+        type:
+          metadata.type ||
+          null,
+
+        candleTime:
+          metadata.candleTime ||
+          null,
+
+        timestamp:
+          Number(
+            row.timestamp,
+          ),
+      };
+    },
   );
 }
 
@@ -428,6 +610,11 @@ const executePaperOrderTransaction =
           ?.source ||
         "MANUAL";
 
+      const metadataJson =
+        serializeMetadata(
+          metadata,
+        );
+
       /*
        * =====================================================
        * BUY
@@ -577,11 +764,12 @@ const executePaperOrderTransaction =
                 fee,
                 realized_profit,
                 source,
+                metadata_json,
                 timestamp
               )
               VALUES (
                 ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?
               )
             `,
           )
@@ -605,6 +793,8 @@ const executePaperOrderTransaction =
             0,
 
             source,
+
+            metadataJson,
 
             timestamp,
           );
@@ -636,6 +826,61 @@ const executePaperOrderTransaction =
               0,
 
             source,
+
+            metadata: {
+              ...metadata,
+            },
+
+            strategy:
+              metadata
+                ?.strategy ||
+              null,
+
+            signalAction:
+              metadata
+                ?.signalAction ||
+              null,
+
+            label:
+              metadata
+                ?.label ||
+              null,
+
+            score:
+              Number.isFinite(
+                Number(
+                  metadata
+                    ?.score,
+                ),
+              )
+                ? Number(
+                    metadata
+                      ?.score,
+                  )
+                : null,
+
+            confidence:
+              Number.isFinite(
+                Number(
+                  metadata
+                    ?.confidence,
+                ),
+              )
+                ? Number(
+                    metadata
+                      ?.confidence,
+                  )
+                : null,
+
+            type:
+              metadata
+                ?.type ||
+              null,
+
+            candleTime:
+              metadata
+                ?.candleTime ||
+              null,
 
             timestamp,
           },
@@ -828,11 +1073,12 @@ const executePaperOrderTransaction =
               fee,
               realized_profit,
               source,
+              metadata_json,
               timestamp
             )
             VALUES (
               ?, ?, ?, ?, ?, ?,
-              ?, ?, ?, ?, ?
+              ?, ?, ?, ?, ?, ?
             )
           `,
         )
@@ -856,6 +1102,8 @@ const executePaperOrderTransaction =
           realizedProfit,
 
           source,
+
+          metadataJson,
 
           timestamp,
         );
@@ -888,6 +1136,61 @@ const executePaperOrderTransaction =
           realizedProfit,
 
           source,
+
+          metadata: {
+            ...metadata,
+          },
+
+          strategy:
+            metadata
+              ?.strategy ||
+            null,
+
+          signalAction:
+            metadata
+              ?.signalAction ||
+            null,
+
+          label:
+            metadata
+              ?.label ||
+            null,
+
+          score:
+            Number.isFinite(
+              Number(
+                metadata
+                  ?.score,
+              ),
+            )
+              ? Number(
+                  metadata
+                    ?.score,
+                )
+              : null,
+
+          confidence:
+            Number.isFinite(
+              Number(
+                metadata
+                  ?.confidence,
+              ),
+            )
+              ? Number(
+                  metadata
+                    ?.confidence,
+                )
+              : null,
+
+          type:
+            metadata
+              ?.type ||
+            null,
+
+          candleTime:
+            metadata
+              ?.candleTime ||
+            null,
 
           timestamp,
         },
