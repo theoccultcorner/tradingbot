@@ -6,7 +6,6 @@ import "./App.css";
 
 import AnalyticsPanel from "./components/AnalyticsPanel";
 import AutoMarketSelectorPanel from "./components/AutoMarketSelectorPanel";
-import AutoTraderPanel from "./components/AutoTraderPanel";
 import BacktestPanel from "./components/BacktestPanel";
 import FourMarketCharts from "./components/FourMarketCharts";
 import IndicatorPanel from "./components/IndicatorPanel";
@@ -24,7 +23,6 @@ import SignalPanel from "./components/SignalPanel";
 import TradingChart from "./components/TradingChart";
 
 import useAutoMarketSelector from "./hooks/useAutoMarketSelector";
-import useAutoTrader from "./hooks/useAutoTrader";
 import useBinanceMarket from "./hooks/useBinanceMarket";
 import useMarketPrices from "./hooks/useMarketPrices";
 import usePaperPortfolio from "./hooks/usePaperPortfolio";
@@ -123,9 +121,6 @@ const VIEW_TITLES = {
 
   risk:
     "Risk Manager",
-
-  autotrader:
-    "Auto Trader",
 
   signals:
     "Signals",
@@ -338,14 +333,12 @@ function App() {
     market.signal;
 
   /*
-   * Legacy client risk manager / trader.
+   * Legacy client risk manager remains mounted
+   * because the Risk Manager page still uses it.
    *
-   * They are still mounted because the
-   * Risk Manager and Auto Trader pages
-   * currently use them.
-   *
-   * Manual-order risk status comes from
-   * the server engine instead.
+   * The legacy client Auto Trader has been retired.
+   * Automated trading is now controlled only by
+   * the Server Trading Engine.
    */
   const riskManager =
     useRiskManager({
@@ -355,24 +348,6 @@ function App() {
         market.price,
 
       portfolio,
-    });
-
-  const autoTrader =
-    useAutoTrader({
-      symbol,
-
-      price:
-        market.price,
-
-      candles:
-        market.candles,
-
-      signal:
-        tradingSignal,
-
-      portfolio,
-
-      riskManager,
     });
 
   const estimatedOrderValue =
@@ -536,69 +511,63 @@ function App() {
    * RESET
    * =========================================================
    */
-async function resetPaperPortfolio() {
-  const approved =
-    window.confirm(
-      "Reset the paper account back to $300? This deletes its trade history.",
-    );
-
-  if (!approved) {
-    return;
-  }
-
-  setOrderLoading(
-    true,
-  );
-
-  setOrderMessage(
-    "",
-  );
-
-  try {
-    autoTrader
-      .disableAutoTrader();
-
-    const result =
-      await portfolio
-        .resetPortfolio(
-          300,
-        );
-
-    if (
-      !result.success
-    ) {
-      throw new Error(
-        result.message ||
-          "Could not reset the paper portfolio.",
+  async function resetPaperPortfolio() {
+    const approved =
+      window.confirm(
+        "Reset the paper account back to $300? This deletes its trade history.",
       );
+
+    if (!approved) {
+      return;
     }
 
-    autoTrader
-      .clearActivity();
-
-    riskManager
-      .clearEvents();
-
-    analyticsState
-      .resetEquityHistory();
+    setOrderLoadingSide(
+      "RESET",
+    );
 
     setOrderMessage(
-      result.message ||
-        "Paper portfolio reset successfully to $300.",
+      "",
     );
-  } catch (
-    error
-  ) {
-    setOrderMessage(
-      error.message ||
-        "Could not reset the paper portfolio.",
-    );
-  } finally {
-    setOrderLoading(
-      false,
-    );
+
+    try {
+      const result =
+        await portfolio
+          .resetPortfolio(
+            300,
+          );
+
+      if (
+        !result.success
+      ) {
+        throw new Error(
+          result.message ||
+            "Could not reset the paper portfolio.",
+        );
+      }
+
+      riskManager
+        .clearEvents();
+
+      analyticsState
+        .resetEquityHistory();
+
+      setOrderMessage(
+        result.message ||
+          "Paper portfolio reset successfully to $300.",
+      );
+    } catch (
+      error
+    ) {
+      setOrderMessage(
+        error.message ||
+          "Could not reset the paper portfolio.",
+      );
+    } finally {
+      setOrderLoadingSide(
+        null,
+      );
+    }
   }
-}
 
   /*
    * =========================================================
@@ -612,9 +581,6 @@ async function resetPaperPortfolio() {
       event.target
         .value;
 
-    autoTrader
-      .disableAutoTrader?.();
-
     setSymbol(
       nextSymbol,
     );
@@ -627,9 +593,6 @@ async function resetPaperPortfolio() {
   function selectSymbol(
     nextSymbol,
   ) {
-    autoTrader
-      .disableAutoTrader?.();
-
     setSymbol(
       nextSymbol,
     );
@@ -646,9 +609,6 @@ async function resetPaperPortfolio() {
   function handleTimeframeChange(
     nextTimeframe,
   ) {
-    autoTrader
-      .disableAutoTrader?.();
-
     setTimeframe(
       nextTimeframe,
     );
@@ -1379,11 +1339,17 @@ async function resetPaperPortfolio() {
           />
         );
 
+      /*
+       * Backward-compatible alias.
+       * If an older NavigationMenu still sends
+       * "autotrader", show the real server engine
+       * instead of the retired client trader.
+       */
       case "autotrader":
         return (
-          <AutoTraderPanel
-            autoTrader={
-              autoTrader
+          <ServerTradingEnginePanel
+            serverEngine={
+              serverEngine
             }
           />
         );

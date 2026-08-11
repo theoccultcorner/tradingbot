@@ -67,12 +67,6 @@ const MENU_GROUPS = [
         label: "Risk Manager",
         icon: "◆",
       },
-
-      {
-        id: "autotrader",
-        label: "Auto Trader",
-        icon: "▶",
-      },
     ],
   },
 
