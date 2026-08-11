@@ -243,19 +243,8 @@ function App() {
    * ALL PORTFOLIO MARKET PRICES
    * =========================================================
    *
-   * This is the equity fix.
-   *
-   * Previously App.jsx only supplied:
-   *
-   * {
-   *   [symbol]: market.price
-   * }
-   *
-   * That meant only ONE crypto had a
-   * current price at any given time.
-   *
-   * Now every supported holding gets
-   * priced simultaneously.
+   * Every supported holding gets priced
+   * simultaneously for portfolio equity.
    */
   const portfolioMarkets =
     useMarketPrices({
@@ -269,9 +258,6 @@ function App() {
   /*
    * Make the selected live market price
    * authoritative for the selected symbol.
-   *
-   * The other seven symbols come from
-   * useMarketPrices.
    */
   const allLivePrices = {
     ...portfolioMarkets
@@ -332,22 +318,12 @@ function App() {
     market.signal;
 
   /*
-   * Legacy client risk manager remains mounted
-   * because the Risk Manager page still uses it.
+   * Automated trading and automated risk execution
+   * are now controlled only by the Server Trading Engine.
    *
-   * The legacy client Auto Trader has been retired.
-   * Automated trading is now controlled only by
-   * the Server Trading Engine.
+   * The old browser-side Auto Trader and Risk Manager
+   * execution hooks have been retired.
    */
-  const riskManager =
-    useRiskManager({
-      symbol,
-
-      price:
-        market.price,
-
-      portfolio,
-    });
 
   const estimatedOrderValue =
     Number(
@@ -543,9 +519,6 @@ function App() {
             "Could not reset the paper portfolio.",
         );
       }
-
-      riskManager
-        .clearEvents();
 
       analyticsState
         .resetEquityHistory();
@@ -1332,21 +1305,6 @@ function App() {
       case "risk":
         return (
           <RiskManagerPanel
-            riskManager={
-              riskManager
-            }
-          />
-        );
-
-      /*
-       * Backward-compatible alias.
-       * If an older NavigationMenu still sends
-       * "autotrader", show the real server engine
-       * instead of the retired client trader.
-       */
-      case "autotrader":
-        return (
-          <ServerTradingEnginePanel
             serverEngine={
               serverEngine
             }
