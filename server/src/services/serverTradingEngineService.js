@@ -364,6 +364,213 @@ function findLatestClosedCandle(
   return null;
 }
 
+/*
+ * =========================================================
+ * MARKET PRICE SAFETY
+ * =========================================================
+ *
+ * These checks are deliberately generous.
+ *
+ * They are not intended to reject ordinary
+ * volatility.
+ *
+ * Their purpose is to catch catastrophic
+ * symbol/price contamination such as:
+ *
+ * DOGEUSD
+ * expected ~$0.07
+ * received ~$74.89
+ */
+const MAX_CANDLE_PRICE_DEVIATION_PERCENT =
+  25;
+
+const MAX_POSITION_PRICE_MULTIPLIER =
+  10;
+
+const MIN_POSITION_PRICE_MULTIPLIER =
+  0.1;
+
+function calculatePercentDifference(
+  left,
+  right,
+) {
+  const leftNumber =
+    Number(
+      left,
+    );
+
+  const rightNumber =
+    Number(
+      right,
+    );
+
+  if (
+    !Number.isFinite(
+      leftNumber,
+    ) ||
+    !Number.isFinite(
+      rightNumber,
+    ) ||
+    leftNumber <= 0 ||
+    rightNumber <= 0
+  ) {
+    return null;
+  }
+
+  return (
+    Math.abs(
+      leftNumber -
+      rightNumber,
+    ) /
+    rightNumber
+  ) * 100;
+}
+
+function validateMarketPrice({
+  state,
+  referencePrice = null,
+}) {
+  const symbol =
+    String(
+      state?.symbol ||
+        "",
+    )
+      .trim()
+      .toUpperCase();
+
+  const marketPrice =
+    Number(
+      state?.price,
+    );
+
+  if (
+    !symbol ||
+    !Number.isFinite(
+      marketPrice,
+    ) ||
+    marketPrice <= 0
+  ) {
+    return {
+      valid: false,
+
+      price:
+        marketPrice,
+
+      reason:
+        "current market price is invalid",
+    };
+  }
+
+  /*
+   * Compare the current live price with the
+   * most recent CLOSED candle.
+   *
+   * A 25% gap from the last closed candle is
+   * already extreme for the markets and
+   * intervals used by this bot.
+   */
+  const latestClosedCandle =
+    findLatestClosedCandle(
+      state?.candles,
+    );
+
+  const candleClose =
+    Number(
+      latestClosedCandle
+        ?.close,
+    );
+
+  if (
+    Number.isFinite(
+      candleClose,
+    ) &&
+    candleClose > 0
+  ) {
+    const candleDeviation =
+      calculatePercentDifference(
+        marketPrice,
+        candleClose,
+      );
+
+    if (
+      candleDeviation !==
+        null &&
+      candleDeviation >
+        MAX_CANDLE_PRICE_DEVIATION_PERCENT
+    ) {
+      return {
+        valid: false,
+
+        price:
+          marketPrice,
+
+        reason:
+          `${symbol} price safety check failed: live price ${marketPrice} differs from the latest closed candle ${candleClose} by ${candleDeviation.toFixed(
+            2,
+          )}%.`,
+      };
+    }
+  }
+
+  /*
+   * For an existing position, also compare
+   * against the position's reference price.
+   *
+   * This is an intentionally huge range:
+   *
+   * minimum = 0.1x
+   * maximum = 10x
+   *
+   * Therefore normal gains/losses are not
+   * blocked, but a thousand-fold symbol
+   * mismatch is.
+   */
+  const reference =
+    Number(
+      referencePrice,
+    );
+
+  if (
+    Number.isFinite(
+      reference,
+    ) &&
+    reference > 0
+  ) {
+    const multiplier =
+      marketPrice /
+      reference;
+
+    if (
+      multiplier >
+        MAX_POSITION_PRICE_MULTIPLIER ||
+      multiplier <
+        MIN_POSITION_PRICE_MULTIPLIER
+    ) {
+      return {
+        valid: false,
+
+        price:
+          marketPrice,
+
+        reason:
+          `${symbol} price safety check failed: live price ${marketPrice} is ${multiplier.toFixed(
+            4,
+          )}x the position reference price ${reference}.`,
+      };
+    }
+  }
+
+  return {
+    valid: true,
+
+    price:
+      marketPrice,
+
+    reason:
+      "clear",
+  };
+}
+
 function createDecision({
   state,
   candle,
@@ -494,6 +701,7 @@ function saveRiskEvent(
 
   return {
     ...event,
+
     id,
   };
 }
@@ -560,6 +768,7 @@ export class ServerTradingEngineService {
     this.settings =
       cleanSettings({
         ...DEFAULT_SETTINGS,
+
         ...(
           saved.settings ||
           {}
@@ -689,6 +898,7 @@ export class ServerTradingEngineService {
     this.settings =
       cleanSettings({
         ...this.settings,
+
         ...nextSettings,
       });
 
@@ -795,7 +1005,9 @@ export class ServerTradingEngineService {
 
     const todaysTrades =
       trades.filter(
-        (trade) =>
+        (
+          trade,
+        ) =>
           isToday(
             trade.timestamp,
           ),
@@ -827,7 +1039,9 @@ export class ServerTradingEngineService {
       )
     ) {
       return {
-        allowed: false,
+        allowed:
+          false,
+
         reason:
           "daily loss limit reached",
       };
@@ -847,15 +1061,20 @@ export class ServerTradingEngineService {
           .maximumTradesPerDay
     ) {
       return {
-        allowed: false,
+        allowed:
+          false,
+
         reason:
           "daily trade limit reached",
       };
     }
 
     return {
-      allowed: true,
-      reason: "clear",
+      allowed:
+        true,
+
+      reason:
+        "clear",
     };
   }
 
@@ -908,12 +1127,14 @@ export class ServerTradingEngineService {
       const signalScore =
         Number(
           signal.totalScore,
-        ) || 0;
+        ) ||
+        0;
 
       const signalConfidence =
         Number(
           signal.confidence,
-        ) || 0;
+        ) ||
+        0;
 
       /*
        * BUY and SELL have independent
@@ -999,7 +1220,8 @@ export class ServerTradingEngineService {
           Number(
             this.settings
               .cooldownMinutes,
-          ) || 0,
+          ) ||
+            0,
           0,
         ) *
         60 *
@@ -1031,7 +1253,8 @@ export class ServerTradingEngineService {
 
       const portfolio =
         await getPaperPortfolio({
-          tradeLimit: 500,
+          tradeLimit:
+            500,
         });
 
       const position =
@@ -1073,17 +1296,23 @@ export class ServerTradingEngineService {
           return;
         }
 
-        const marketPrice =
-          Number(
-            state.price,
-          );
+        /*
+         * Last line of defense before using
+         * state.price for position sizing.
+         */
+        const priceSafety =
+          validateMarketPrice({
+            state,
+          });
 
         if (
-          !Number.isFinite(
-            marketPrice,
-          ) ||
-          marketPrice <= 0
+          !priceSafety.valid
         ) {
+          console.warn(
+            "BUY blocked by market-price safety check:",
+            priceSafety.reason,
+          );
+
           await this
             .recordDecision(
               createDecision({
@@ -1092,12 +1321,15 @@ export class ServerTradingEngineService {
                 signal,
 
                 message:
-                  "BUY skipped because the current market price is invalid.",
+                  `BUY blocked: ${priceSafety.reason}`,
               }),
             );
 
           return;
         }
+
+        const marketPrice =
+          priceSafety.price;
 
         const currentPositionValue =
           position
@@ -1112,7 +1344,8 @@ export class ServerTradingEngineService {
           Math.max(
             Number(
               portfolio.cash,
-            ) || 0,
+            ) ||
+              0,
             0,
           );
 
@@ -1121,7 +1354,8 @@ export class ServerTradingEngineService {
             Number(
               portfolio
                 .startingCash,
-            ) || cash,
+            ) ||
+              cash,
             0,
           );
 
@@ -1156,6 +1390,7 @@ export class ServerTradingEngineService {
           Math.min(
             this.settings
               .maximumPositionValue,
+
             dynamicPositionCap,
           );
 
@@ -1187,7 +1422,8 @@ export class ServerTradingEngineService {
             Number(
               portfolio
                 .feeRate,
-            ) || 0.001,
+            ) ||
+              0.001,
             0,
           );
 
@@ -1213,7 +1449,8 @@ export class ServerTradingEngineService {
          * maximum safe gross order value.
          */
         const maximumGrossFromCash =
-          feeRate > 0
+          feeRate >
+          0
             ? spendableCash /
               (
                 1 +
@@ -1225,8 +1462,11 @@ export class ServerTradingEngineService {
           Math.min(
             this.settings
               .buyAmount,
+
             dynamicBuyCap,
+
             remainingAllowance,
+
             maximumGrossFromCash,
           );
 
@@ -1234,7 +1474,8 @@ export class ServerTradingEngineService {
           !Number.isFinite(
             buyValue,
           ) ||
-          buyValue <= 0
+          buyValue <=
+            0
         ) {
           await this
             .recordDecision(
@@ -1259,7 +1500,8 @@ export class ServerTradingEngineService {
           !Number.isFinite(
             quantity,
           ) ||
-          quantity <= 0
+          quantity <=
+            0
         ) {
           await this
             .recordDecision(
@@ -1300,7 +1542,8 @@ export class ServerTradingEngineService {
               symbol:
                 state.symbol,
 
-              side: "BUY",
+              side:
+                "BUY",
 
               quantity,
 
@@ -1366,7 +1609,8 @@ export class ServerTradingEngineService {
               candle,
               signal,
 
-              action: "BUY",
+              action:
+                "BUY",
 
               executed:
                 Boolean(
@@ -1407,7 +1651,8 @@ export class ServerTradingEngineService {
           Number(
             position
               .quantity,
-          ) <= 0
+          ) <=
+            0
         ) {
           await this
             .recordDecision(
@@ -1430,17 +1675,28 @@ export class ServerTradingEngineService {
               .quantity,
           );
 
-        const marketPrice =
-          Number(
-            state.price,
-          );
+        /*
+         * Compare the incoming SELL price with
+         * both the latest candle and the actual
+         * position entry price.
+         */
+        const priceSafety =
+          validateMarketPrice({
+            state,
+
+            referencePrice:
+              position
+                .averageEntryPrice,
+          });
 
         if (
-          !Number.isFinite(
-            marketPrice,
-          ) ||
-          marketPrice <= 0
+          !priceSafety.valid
         ) {
+          console.warn(
+            "SELL blocked by market-price safety check:",
+            priceSafety.reason,
+          );
+
           await this
             .recordDecision(
               createDecision({
@@ -1449,12 +1705,15 @@ export class ServerTradingEngineService {
                 signal,
 
                 message:
-                  "SELL skipped because the current market price is invalid.",
+                  `SELL blocked: ${priceSafety.reason}`,
               }),
             );
 
           return;
         }
+
+        const marketPrice =
+          priceSafety.price;
 
         const orderKey =
           `${state.symbol}-${state.timeframe}-${candle.time}-SELL`;
@@ -1467,7 +1726,8 @@ export class ServerTradingEngineService {
               symbol:
                 state.symbol,
 
-              side: "SELL",
+              side:
+                "SELL",
 
               quantity,
 
@@ -1540,7 +1800,8 @@ export class ServerTradingEngineService {
               candle,
               signal,
 
-              action: "SELL",
+              action:
+                "SELL",
 
               message:
                 result.message,
@@ -1609,14 +1870,16 @@ export class ServerTradingEngineService {
       !Number.isFinite(
         price,
       ) ||
-      price <= 0
+      price <=
+        0
     ) {
       return;
     }
 
     const portfolio =
       await getPaperPortfolio({
-        tradeLimit: 500,
+        tradeLimit:
+          500,
       });
 
     const position =
@@ -1630,7 +1893,8 @@ export class ServerTradingEngineService {
       Number(
         position
           .quantity,
-      ) <= 0
+      ) <=
+        0
     ) {
       if (
         this
@@ -1660,8 +1924,77 @@ export class ServerTradingEngineService {
       !Number.isFinite(
         entryPrice,
       ) ||
-      entryPrice <= 0
+      entryPrice <=
+        0
     ) {
+      return;
+    }
+
+    /*
+     * =====================================================
+     * RISK EXIT PRICE SAFETY
+     * =====================================================
+     *
+     * Do this BEFORE calculating stop-loss,
+     * take-profit or trailing-stop percentages.
+     *
+     * This specifically prevents a corrupted
+     * price from becoming a real SELL.
+     */
+    const priceSafety =
+      validateMarketPrice({
+        state,
+
+        referencePrice:
+          entryPrice,
+      });
+
+    if (
+      !priceSafety.valid
+    ) {
+      console.error(
+        "Risk exit blocked by market-price safety check:",
+        priceSafety.reason,
+      );
+
+      this.status =
+        "Price safety block";
+
+      this.lastRiskEvent =
+        saveRiskEvent({
+          type:
+            "PRICE_SAFETY_BLOCK",
+
+          symbol:
+            state.symbol,
+
+          timeframe:
+            state.timeframe,
+
+          price,
+
+          quantity:
+            Number(
+              position.quantity,
+            ) ||
+            0,
+
+          executed:
+            false,
+
+          orderKey:
+            null,
+
+          message:
+            priceSafety.reason,
+
+          timestamp:
+            Date.now(),
+        });
+
+      await this
+        .persistRuntime();
+
       return;
     }
 
@@ -1741,7 +2074,8 @@ export class ServerTradingEngineService {
         Number(
           this.settings
             .stopLossPercent,
-        ) || 1.5,
+        ) ||
+          1.5,
       )
     ) {
       type =
@@ -1762,7 +2096,8 @@ export class ServerTradingEngineService {
         Number(
           this.settings
             .takeProfitPercent,
-        ) || 3,
+        ) ||
+          3,
       )
     ) {
       type =
@@ -1787,7 +2122,8 @@ export class ServerTradingEngineService {
           Number(
             this.settings
               .trailingStopPercent,
-          ) || 1,
+          ) ||
+            1,
         )
     ) {
       type =
@@ -1817,7 +2153,8 @@ export class ServerTradingEngineService {
         !Number.isFinite(
           quantity,
         ) ||
-        quantity <= 0
+        quantity <=
+          0
       ) {
         return;
       }
@@ -1839,7 +2176,8 @@ export class ServerTradingEngineService {
             symbol:
               state.symbol,
 
-            side: "SELL",
+            side:
+              "SELL",
 
             quantity,
 

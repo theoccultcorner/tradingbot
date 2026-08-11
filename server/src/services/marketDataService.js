@@ -1083,6 +1083,98 @@ export class BinanceMarketDataService {
       return;
     }
 
+    /*
+     * =====================================================
+     * MARKET-SYMBOL SAFETY GUARD
+     * =====================================================
+     *
+     * Never allow a Binance message from one market to
+     * update the state of another market.
+     *
+     * This is especially important while Auto Market
+     * Selector is rotating between symbols.
+     *
+     * Example of what this prevents:
+     *
+     *   selected market: DOGEUSD
+     *   stale message:   SOLUSD @ $74.89
+     *
+     * Without this guard, that SOL price could become the
+     * DOGE price and trigger a catastrophically incorrect
+     * risk exit.
+     */
+    const expectedSymbol =
+      String(
+        this.symbol ||
+          "",
+      )
+        .trim()
+        .toLowerCase();
+
+    const streamSymbol =
+      String(
+        stream,
+      )
+        .split(
+          "@",
+        )[0]
+        ?.trim()
+        .toLowerCase();
+
+    /*
+     * Binance event payloads normally contain `s`
+     * for the symbol as well.
+     *
+     * Check both the combined-stream name and the event
+     * payload whenever possible.
+     */
+    const dataSymbol =
+      data?.s
+        ? String(
+            data.s,
+          )
+            .trim()
+            .toLowerCase()
+        : null;
+
+    if (
+      !expectedSymbol ||
+      streamSymbol !==
+        expectedSymbol ||
+      (
+        dataSymbol &&
+        dataSymbol !==
+          expectedSymbol
+      )
+    ) {
+      console.warn(
+        "Rejected mismatched Binance market message:",
+        {
+          expectedSymbol:
+            this.symbol,
+
+          streamSymbol:
+            streamSymbol
+              ? streamSymbol.toUpperCase()
+              : null,
+
+          dataSymbol:
+            dataSymbol
+              ? dataSymbol.toUpperCase()
+              : null,
+
+          stream,
+        },
+      );
+
+      return;
+    }
+
+    /*
+     * =====================================================
+     * MESSAGE ROUTING
+     * =====================================================
+     */
     if (
       stream.endsWith(
         "@trade",
@@ -1123,14 +1215,21 @@ export class BinanceMarketDataService {
       this.processTicker(
         data,
       );
+    } else {
+      /*
+       * Ignore Binance messages that do not belong to one
+       * of the streams used by this service.
+       */
+      return;
     }
 
     this.state.updatedAt =
       Date.now();
 
     /*
-     * Do not clone/broadcast the entire market
-     * state for every raw Binance message.
+     * Do not clone/broadcast the entire market state for
+     * every raw Binance message.
+     *
      * publish() coalesces bursts into one update.
      */
     this.publish();
