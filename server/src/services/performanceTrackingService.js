@@ -352,6 +352,309 @@ function calculateTradingCosts(
   };
 }
 
+/*
+ * =========================================================
+ * PROFITABILITY UPGRADE #5
+ *
+ * ROLLING PERFORMANCE WINDOWS
+ * =========================================================
+ *
+ * Calculate account performance over the
+ * previous N calendar days.
+ *
+ * The return is measured from the equity
+ * available around the beginning of the
+ * requested period rather than always
+ * comparing against the original bankroll.
+ */
+function calculatePeriodPerformance({
+  days,
+  equityHistory,
+  trades,
+  slippageBps,
+}) {
+  const safeDays =
+    Math.max(
+      Number(
+        days,
+      ) || 1,
+      1,
+    );
+
+  const now =
+    Date.now();
+
+  const periodStart =
+    now -
+    (
+      safeDays *
+      24 *
+      60 *
+      60 *
+      1000
+    );
+
+  const sortedEquity =
+    Array.isArray(
+      equityHistory,
+    )
+      ? [
+          ...equityHistory,
+        ].sort(
+          (
+            left,
+            right,
+          ) =>
+            numberOrZero(
+              left.timestamp,
+            ) -
+            numberOrZero(
+              right.timestamp,
+            ),
+        )
+      : [];
+
+  const endingPoint =
+    sortedEquity[
+      sortedEquity.length -
+        1
+    ] ||
+    null;
+
+  /*
+   * Find the newest snapshot that existed
+   * at or before the requested window.
+   */
+  let startingPoint =
+    null;
+
+  for (
+    const point of sortedEquity
+  ) {
+    if (
+      numberOrZero(
+        point.timestamp,
+      ) <=
+      periodStart
+    ) {
+      startingPoint =
+        point;
+    } else {
+      break;
+    }
+  }
+
+  /*
+   * completePeriod tells the frontend
+   * whether we genuinely have the full
+   * requested history.
+   *
+   * Example:
+   *
+   * If the bot has only stored 3 days of
+   * data, performance30d can still display
+   * available performance but will report:
+   *
+   * completePeriod: false
+   */
+  const completePeriod =
+    Boolean(
+      startingPoint,
+    );
+
+  if (
+    !startingPoint &&
+    sortedEquity.length > 0
+  ) {
+    startingPoint =
+      sortedEquity[0];
+  }
+
+  const startingEquity =
+    startingPoint
+      ? numberOrZero(
+          startingPoint.equity,
+        )
+      : 0;
+
+  const endingEquity =
+    endingPoint
+      ? numberOrZero(
+          endingPoint.equity,
+        )
+      : 0;
+
+  const profit =
+    endingEquity -
+    startingEquity;
+
+  const returnPercent =
+    startingEquity > 0
+      ? (
+          profit /
+          startingEquity
+        ) *
+        100
+      : 0;
+
+  /*
+   * Filter all order executions that
+   * occurred inside this period.
+   */
+  const periodTrades =
+    Array.isArray(
+      trades,
+    )
+      ? trades.filter(
+          (
+            trade,
+          ) => {
+            const timestamp =
+              timestampValue(
+                trade.timestamp,
+              ) ||
+              timestampValue(
+                trade.createdAt,
+              ) ||
+              0;
+
+            return (
+              timestamp >=
+                periodStart &&
+              timestamp <=
+                now
+            );
+          },
+        )
+      : [];
+
+  /*
+   * A closed trade is currently represented
+   * by a SELL carrying realizedProfit.
+   */
+  const closedTrades =
+    periodTrades.filter(
+      (
+        trade,
+      ) =>
+        trade.side ===
+          "SELL" &&
+        Number.isFinite(
+          Number(
+            trade.realizedProfit,
+          ),
+        ),
+    );
+
+  const wins =
+    closedTrades.filter(
+      (
+        trade,
+      ) =>
+        numberOrZero(
+          trade.realizedProfit,
+        ) > 0,
+    );
+
+  const losses =
+    closedTrades.filter(
+      (
+        trade,
+      ) =>
+        numberOrZero(
+          trade.realizedProfit,
+        ) < 0,
+    );
+
+  const breakEvenTrades =
+    closedTrades.filter(
+      (
+        trade,
+      ) =>
+        numberOrZero(
+          trade.realizedProfit,
+        ) === 0,
+    );
+
+  const winRate =
+    closedTrades.length > 0
+      ? (
+          wins.length /
+          closedTrades.length
+        ) *
+        100
+      : 0;
+
+  const tradingCosts =
+    calculateTradingCosts(
+      periodTrades,
+      slippageBps,
+    );
+
+  return {
+    periodDays:
+      safeDays,
+
+    periodStart,
+
+    periodEnd:
+      now,
+
+    completePeriod,
+
+    startingTimestamp:
+      startingPoint
+        ? numberOrZero(
+            startingPoint.timestamp,
+          )
+        : null,
+
+    endingTimestamp:
+      endingPoint
+        ? numberOrZero(
+            endingPoint.timestamp,
+          )
+        : null,
+
+    startingEquity,
+
+    endingEquity,
+
+    profit,
+
+    returnPercent,
+
+    orders:
+      periodTrades.length,
+
+    closedTrades:
+      closedTrades.length,
+
+    wins:
+      wins.length,
+
+    losses:
+      losses.length,
+
+    breakEvenTrades:
+      breakEvenTrades.length,
+
+    winRate,
+
+    fees:
+      tradingCosts
+        .totalFees,
+
+    estimatedSlippage:
+      tradingCosts
+        .estimatedSlippage,
+
+    totalTradingCosts:
+      tradingCosts
+        .totalTradingCosts,
+  };
+}
+
 function calculateDrawdown(
   points,
 ) {
@@ -457,13 +760,6 @@ function calculateDrawdown(
  * Gross Winning Profit
  * --------------------
  * Gross Losing Amount
- *
- * A value above 1 means gross winners are
- * larger than gross losers.
- *
- * This metric is still sample-dependent, so
- * we also return a rating that refuses to
- * label tiny samples as "strong".
  */
 function calculateProfitFactorMetrics(
   trades,
@@ -614,11 +910,6 @@ function calculateProfitFactorMetrics(
   };
 }
 
-/*
- * Keep the original helper available so
- * any future internal callers can still
- * request only the numeric factor.
- */
 function calculateProfitFactor(
   trades,
 ) {
@@ -1241,12 +1532,6 @@ export class PerformanceTrackingService {
     this.snapshotLock =
       false;
 
-    /*
-     * Keep the database bounded.
-     *
-     * Only the newest maxEquityPoints
-     * snapshots are retained.
-     */
     database
       .prepare(
         `
@@ -1472,10 +1757,6 @@ export class PerformanceTrackingService {
           Date.now(),
       };
 
-      /*
-       * Persist the snapshot so maximum
-       * drawdown survives Render restarts.
-       */
       database
         .transaction(
           () => {
@@ -1617,7 +1898,7 @@ export class PerformanceTrackingService {
       : [];
   }
 
-  async getSummary() {
+    async getSummary() {
     const [
       portfolio,
       trades,
@@ -1743,6 +2024,50 @@ export class PerformanceTrackingService {
         this.slippageBps,
       );
 
+    /*
+     * =====================================================
+     * 1 / 7 / 30 DAY PERFORMANCE
+     * =====================================================
+     */
+    const performance1d =
+      calculatePeriodPerformance({
+        days:
+          1,
+
+        equityHistory,
+
+        trades,
+
+        slippageBps:
+          this.slippageBps,
+      });
+
+    const performance7d =
+      calculatePeriodPerformance({
+        days:
+          7,
+
+        equityHistory,
+
+        trades,
+
+        slippageBps:
+          this.slippageBps,
+      });
+
+    const performance30d =
+      calculatePeriodPerformance({
+        days:
+          30,
+
+        equityHistory,
+
+        trades,
+
+        slippageBps:
+          this.slippageBps,
+      });
+
     const accountProfitAfterFees =
       latestEquity &&
       Number.isFinite(
@@ -1829,7 +2154,7 @@ export class PerformanceTrackingService {
       winRate,
 
       /*
-       * PROFIT FACTOR INTELLIGENCE
+       * PROFIT FACTOR
        */
       profitFactor:
         profitFactorMetrics
@@ -1860,7 +2185,7 @@ export class PerformanceTrackingService {
           .minimumSample,
 
       /*
-       * EXPECTANCY METRICS
+       * EXPECTANCY
        */
       averageWinningTrade:
         expectancyMetrics
@@ -1917,6 +2242,19 @@ export class PerformanceTrackingService {
       realizedProfitToday,
 
       /*
+       * =====================================================
+       * ROADMAP #5
+       *
+       * DAILY / 7 DAY / 30 DAY PERFORMANCE
+       * =====================================================
+       */
+      performance1d,
+
+      performance7d,
+
+      performance30d,
+
+      /*
        * FEES + SLIPPAGE
        */
       grossTradingProfit,
@@ -1954,12 +2292,18 @@ export class PerformanceTrackingService {
       slippageBps:
         this.slippageBps,
 
+      /*
+       * DRAWDOWN
+       */
       maximumDrawdownAmount:
         drawdown.amount,
 
       maximumDrawdownPercent:
         drawdown.percent,
 
+      /*
+       * GROUP PERFORMANCE
+       */
       bySymbol:
         groupTradePerformance(
           sellTrades,
