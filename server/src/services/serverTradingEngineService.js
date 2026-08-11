@@ -233,7 +233,8 @@ function cleanSettings(
       Math.max(
         Number(
           value.buyAmount,
-        ) || 40,
+        ) ||
+          40,
         1,
       ),
 
@@ -241,7 +242,8 @@ function cleanSettings(
       Math.max(
         Number(
           value.maximumPositionValue,
-        ) || 120,
+        ) ||
+          120,
         1,
       ),
 
@@ -262,7 +264,8 @@ function cleanSettings(
       Math.max(
         Number(
           value.stopLossPercent,
-        ) || 1.5,
+        ) ||
+          1.5,
         0.1,
       ),
 
@@ -270,7 +273,8 @@ function cleanSettings(
       Math.max(
         Number(
           value.takeProfitPercent,
-        ) || 3,
+        ) ||
+          3,
         0.1,
       ),
 
@@ -282,7 +286,8 @@ function cleanSettings(
       Math.max(
         Number(
           value.trailingStopPercent,
-        ) || 1,
+        ) ||
+          1,
         0.1,
       ),
 
@@ -290,7 +295,8 @@ function cleanSettings(
       Math.max(
         Number(
           value.dailyLossLimit,
-        ) || 30,
+        ) ||
+          30,
         1,
       ),
 
@@ -338,11 +344,16 @@ function findLatestClosedCandle(
   for (
     let index =
       candles.length - 1;
+
     index >= 0;
-    index -= 1
+
+    index -=
+      1
   ) {
     if (
-      candles[index]?.closed
+      candles[
+        index
+      ]?.closed
     ) {
       return candles[
         index
@@ -387,22 +398,29 @@ function createDecision({
     score:
       Number(
         signal?.totalScore,
-      ) || 0,
+      ) ||
+      0,
 
     confidence:
       Number(
         signal?.confidence,
-      ) || 0,
+      ) ||
+      0,
 
     price:
       Number(
         state.price,
-      ) || null,
+      ) ||
+      null,
 
     executed,
+
     quantity,
+
     orderType,
+
     orderKey,
+
     message,
 
     timestamp:
@@ -450,11 +468,13 @@ function saveRiskEvent(
 
       Number(
         event.price,
-      ) || null,
+      ) ||
+        null,
 
       Number(
         event.quantity,
-      ) || null,
+      ) ||
+        null,
 
       event.executed
         ? 1
@@ -540,7 +560,6 @@ export class ServerTradingEngineService {
     this.settings =
       cleanSettings({
         ...DEFAULT_SETTINGS,
-
         ...(
           saved.settings ||
           {}
@@ -563,14 +582,15 @@ export class ServerTradingEngineService {
       Number(
         runtime
           .lastTradeTime,
-      ) || 0;
+      ) ||
+      0;
 
     this.highWaterMarks =
       runtime
-        .highWaterMarks &&
-      typeof runtime
-        .highWaterMarks ===
-        "object"
+          .highWaterMarks &&
+        typeof runtime
+          .highWaterMarks ===
+          "object"
         ? runtime
             .highWaterMarks
         : {};
@@ -807,9 +827,7 @@ export class ServerTradingEngineService {
       )
     ) {
       return {
-        allowed:
-          false,
-
+        allowed: false,
         reason:
           "daily loss limit reached",
       };
@@ -819,10 +837,6 @@ export class ServerTradingEngineService {
      * Optional daily transaction limit.
      *
      * Zero means unlimited.
-     *
-     * This gives you unlimited trading now,
-     * while still allowing the frontend to
-     * impose a limit later if desired.
      */
     if (
       this.settings
@@ -833,20 +847,15 @@ export class ServerTradingEngineService {
           .maximumTradesPerDay
     ) {
       return {
-        allowed:
-          false,
-
+        allowed: false,
         reason:
           "daily trade limit reached",
       };
     }
 
     return {
-      allowed:
-        true,
-
-      reason:
-        "clear",
+      allowed: true,
+      reason: "clear",
     };
   }
 
@@ -907,7 +916,7 @@ export class ServerTradingEngineService {
         ) || 0;
 
       /*
-       * BUY and SELL now have independent
+       * BUY and SELL have independent
        * thresholds.
        */
       if (
@@ -940,15 +949,6 @@ export class ServerTradingEngineService {
         signal.action ===
         "SELL"
       ) {
-        /*
-         * Example:
-         *
-         * minimumSellScore = 40
-         *
-         * qualifying score must be:
-         *
-         * -40, -41, -50, etc.
-         */
         if (
           signalScore >
             -Math.abs(
@@ -1031,8 +1031,7 @@ export class ServerTradingEngineService {
 
       const portfolio =
         await getPaperPortfolio({
-          tradeLimit:
-            500,
+          tradeLimit: 500,
         });
 
       const position =
@@ -1057,8 +1056,7 @@ export class ServerTradingEngineService {
           );
 
         if (
-          !riskGate
-            .allowed
+          !riskGate.allowed
         ) {
           await this
             .recordDecision(
@@ -1158,7 +1156,6 @@ export class ServerTradingEngineService {
           Math.min(
             this.settings
               .maximumPositionValue,
-
             dynamicPositionCap,
           );
 
@@ -1197,50 +1194,47 @@ export class ServerTradingEngineService {
         /*
          * Keep 2% of starting capital in
          * reserve for fees/rounding and to
-         * avoid exhausting the wallet.
+         * avoid exhausting the account.
          */
-        const cashReserve =
-          Math.max(
-            startingCash *
-              0.02,
-            1,
-          );
+        const reserveCash =
+          startingCash *
+          0.02;
 
         const spendableCash =
           Math.max(
             cash -
-              cashReserve,
+              reserveCash,
             0,
           );
 
-        const availableBeforeFee =
-          (
-            spendableCash /
-            (
-              1 +
-              feeRate
-            )
-          ) *
-          0.995;
+        /*
+         * Because BUY fees are paid in cash,
+         * convert spendable cash into the
+         * maximum safe gross order value.
+         */
+        const maximumGrossFromCash =
+          feeRate > 0
+            ? spendableCash /
+              (
+                1 +
+                feeRate
+              )
+            : spendableCash;
 
-        const purchaseAmount =
+        const buyValue =
           Math.min(
             this.settings
               .buyAmount,
-
             dynamicBuyCap,
-
             remainingAllowance,
-
-            availableBeforeFee,
+            maximumGrossFromCash,
           );
 
         if (
           !Number.isFinite(
-            purchaseAmount,
+            buyValue,
           ) ||
-          purchaseAmount <
-            1
+          buyValue <= 0
         ) {
           await this
             .recordDecision(
@@ -1250,9 +1244,7 @@ export class ServerTradingEngineService {
                 signal,
 
                 message:
-                  `BUY skipped because available cash or position allowance is too low. Cash: $${cash.toFixed(
-                    2,
-                  )}.`,
+                  "BUY skipped because there is not enough available cash or position capacity.",
               }),
             );
 
@@ -1260,117 +1252,104 @@ export class ServerTradingEngineService {
         }
 
         const quantity =
-          purchaseAmount /
+          buyValue /
           marketPrice;
 
-        /*
-         * Unique by:
-         *
-         * symbol
-         * timeframe
-         * candle
-         * BUY
-         *
-         * This prevents duplicate execution
-         * even with unlimited daily trading.
-         */
-        const orderKey =
-          `${state.symbol}-${state.timeframe}-${candle.time}-BUY`;
-
-        let result;
-
-        try {
-          result =
-            await executeIdempotentPaperOrder({
-              orderKey,
-
-              order: {
-                symbol:
-                  state.symbol,
-
-                side:
-                  "BUY",
-
-                quantity,
-
-                price:
-                  marketPrice,
-              },
-
-              metadata: {
-                source:
-                  "SERVER_TRADING_ENGINE",
-
-                candleTime:
-                  candle.time,
-
-                timeframe:
-                  state.timeframe,
-
-                score:
-                  signalScore,
-
-                confidence:
-                  signalConfidence,
-
-                minimumBuyScore:
-                  this.settings
-                    .minimumBuyScore,
-
-                minimumBuyConfidence:
-                  this.settings
-                    .minimumBuyConfidence,
-
-                requestedBuyAmount:
-                  this.settings
-                    .buyAmount,
-
-                actualPurchaseAmount:
-                  purchaseAmount,
-
-                cashBeforeOrder:
-                  cash,
-
-                cashReserve,
-
-                dynamicBuyCap,
-
-                dynamicPositionCap,
-
-                effectivePositionLimit,
-              },
-            });
-        } catch (
-          error
+        if (
+          !Number.isFinite(
+            quantity,
+          ) ||
+          quantity <= 0
         ) {
-          const message =
-            String(
-              error?.message ||
-                "",
+          await this
+            .recordDecision(
+              createDecision({
+                state,
+                candle,
+                signal,
+
+                message:
+                  "BUY skipped because the calculated quantity is invalid.",
+              }),
             );
 
-          if (
-            message.includes(
-              "Not enough paper cash",
-            )
-          ) {
-            await this
-              .recordDecision(
-                createDecision({
-                  state,
-                  candle,
-                  signal,
-
-                  message:
-                    "BUY skipped because the available paper cash changed before execution.",
-                }),
-              );
-
-            return;
-          }
-
-          throw error;
+          return;
         }
+
+        /*
+         * The closed candle makes this order
+         * key deterministic. Repeated server
+         * updates cannot execute it twice.
+         */
+        const orderKey =
+          [
+            "signal",
+            state.symbol,
+            state.timeframe,
+            candle.time,
+            "BUY",
+          ].join(
+            "_",
+          );
+
+        const result =
+          await executeIdempotentPaperOrder({
+            orderKey,
+
+            order: {
+              symbol:
+                state.symbol,
+
+              side: "BUY",
+
+              quantity,
+
+              price:
+                marketPrice,
+            },
+
+            /*
+             * ROADMAP #7
+             *
+             * Preserve signal identity with
+             * the trade for later strategy
+             * performance analysis.
+             */
+            metadata: {
+              source:
+                "SERVER_TRADING_ENGINE",
+
+              strategy:
+                "SIGNAL_ENGINE",
+
+              signalAction:
+                signal.action,
+
+              label:
+                signal.label ||
+                "Unknown",
+
+              candleTime:
+                candle.time,
+
+              timeframe:
+                state.timeframe,
+
+              score:
+                signalScore,
+
+              confidence:
+                signalConfidence,
+
+              minimumBuyScore:
+                this.settings
+                  .minimumBuyScore,
+
+              minimumBuyConfidence:
+                this.settings
+                  .minimumBuyConfidence,
+            },
+          });
 
         if (
           result.success &&
@@ -1378,9 +1357,6 @@ export class ServerTradingEngineService {
         ) {
           this.lastTradeTime =
             Date.now();
-
-          await this
-            .persistRuntime();
         }
 
         await this
@@ -1390,30 +1366,27 @@ export class ServerTradingEngineService {
               candle,
               signal,
 
-              action:
-                "BUY",
+              action: "BUY",
 
-              message:
-                result.message,
-
-              /*
-               * FIX:
-               *
-               * A duplicate historical result
-               * is not a new execution.
-               */
               executed:
                 Boolean(
-                  result.success &&
-                  !result.duplicate,
+                  result.success,
                 ),
 
               quantity,
 
               orderType:
-                "SIGNAL_ENTRY",
+                "SIGNAL_BUY",
 
               orderKey,
+
+              message:
+                result.message ||
+                (
+                  result.success
+                    ? "BUY order executed."
+                    : "BUY order was not executed."
+                ),
             }),
           );
 
@@ -1422,11 +1395,8 @@ export class ServerTradingEngineService {
 
       /*
        * =====================================================
-       * SELL SIGNAL
+       * SELL
        * =====================================================
-       *
-       * A qualifying SELL closes the entire
-       * position in this symbol.
        */
       if (
         signal.action ===
@@ -1497,8 +1467,7 @@ export class ServerTradingEngineService {
               symbol:
                 state.symbol,
 
-              side:
-                "SELL",
+              side: "SELL",
 
               quantity,
 
@@ -1506,9 +1475,25 @@ export class ServerTradingEngineService {
                 marketPrice,
             },
 
+            /*
+             * ROADMAP #7
+             *
+             * Preserve signal identity with
+             * signal-driven exits.
+             */
             metadata: {
               source:
                 "SERVER_TRADING_ENGINE",
+
+              strategy:
+                "SIGNAL_ENGINE",
+
+              signalAction:
+                signal.action,
+
+              label:
+                signal.label ||
+                "Unknown",
 
               candleTime:
                 candle.time,
@@ -1555,17 +1540,14 @@ export class ServerTradingEngineService {
               candle,
               signal,
 
-              action:
-                "SELL",
+              action: "SELL",
 
               message:
                 result.message,
 
               /*
-               * FIX:
-               *
-               * Do not report an old duplicate
-               * order as a fresh SELL.
+               * A duplicate historical result
+               * is not a new execution.
                */
               executed:
                 Boolean(
@@ -1604,16 +1586,6 @@ export class ServerTradingEngineService {
    * =========================================================
    * AUTOMATIC POSITION RISK MANAGEMENT
    * =========================================================
-   *
-   * These exits operate separately from
-   * SELL signals.
-   *
-   * A position can therefore close because:
-   *
-   * 1. SELL signal
-   * 2. stop loss
-   * 3. take profit
-   * 4. trailing stop
    */
   async evaluateRisk(
     state,
@@ -1644,8 +1616,7 @@ export class ServerTradingEngineService {
 
     const portfolio =
       await getPaperPortfolio({
-        tradeLimit:
-          500,
+        tradeLimit: 500,
       });
 
     const position =
@@ -1868,17 +1839,33 @@ export class ServerTradingEngineService {
             symbol:
               state.symbol,
 
-            side:
-              "SELL",
+            side: "SELL",
 
             quantity,
 
             price,
           },
 
+          /*
+           * ROADMAP #7
+           *
+           * Risk exits get their own strategy
+           * identity so STOP_LOSS,
+           * TAKE_PROFIT and TRAILING_STOP can
+           * be measured independently.
+           */
           metadata: {
             source:
               "SERVER_RISK_MANAGER",
+
+            strategy:
+              "RISK_MANAGER",
+
+            signalAction:
+              "SELL",
+
+            label:
+              type,
 
             type,
 
@@ -1917,8 +1904,6 @@ export class ServerTradingEngineService {
           quantity,
 
           /*
-           * FIX:
-           *
            * A duplicate risk order is not
            * a new executed exit.
            */
