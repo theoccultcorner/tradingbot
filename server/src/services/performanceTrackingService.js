@@ -1243,7 +1243,7 @@ function calculateExpectancyMetrics(
  */
 function groupTradePerformance(
   trades,
-  key,
+  keyOrResolver,
   slippageBps,
 ) {
   const groups =
@@ -1252,9 +1252,29 @@ function groupTradePerformance(
   for (
     const trade of trades
   ) {
+    const resolvedGroupName =
+      typeof keyOrResolver ===
+      "function"
+        ? keyOrResolver(
+            trade,
+          )
+        : trade?.[
+            keyOrResolver
+          ];
+
     const groupName =
-      trade[key] ||
-      "Unknown";
+      resolvedGroupName ===
+        null ||
+      resolvedGroupName ===
+        undefined ||
+      String(
+        resolvedGroupName,
+      ).trim() ===
+        ""
+        ? "Unknown"
+        : String(
+            resolvedGroupName,
+          );
 
     if (
       !groups[
@@ -1496,6 +1516,159 @@ function groupTradePerformance(
         right.realizedProfit -
         left.realizedProfit,
     );
+}
+
+/*
+ * =========================================================
+ * PROFITABILITY UPGRADE #7
+ *
+ * STRATEGY BREAKDOWN HELPERS
+ * =========================================================
+ *
+ * These buckets operate on CLOSED SELL trades.
+ *
+ * That means they describe the metadata attached
+ * to the execution that CLOSED the trade. They do
+ * not retroactively reconstruct the entry signal
+ * for positions created before metadata persistence.
+ */
+function confidenceBucket(
+  trade,
+) {
+  const confidence =
+    Number(
+      trade?.confidence ??
+      trade?.metadata
+        ?.confidence,
+    );
+
+  if (
+    !Number.isFinite(
+      confidence,
+    )
+  ) {
+    return "Unknown";
+  }
+
+  if (confidence < 45) {
+    return "Below 45%";
+  }
+
+  if (confidence < 60) {
+    return "45-59%";
+  }
+
+  if (confidence < 75) {
+    return "60-74%";
+  }
+
+  if (confidence < 90) {
+    return "75-89%";
+  }
+
+  return "90-100%";
+}
+
+function scoreBucket(
+  trade,
+) {
+  const score =
+    Number(
+      trade?.score ??
+      trade?.metadata
+        ?.score,
+    );
+
+  if (
+    !Number.isFinite(
+      score,
+    )
+  ) {
+    return "Unknown";
+  }
+
+  const absoluteScore =
+    Math.abs(
+      score,
+    );
+
+  if (absoluteScore < 40) {
+    return "0-39";
+  }
+
+  if (absoluteScore < 50) {
+    return "40-49";
+  }
+
+  if (absoluteScore < 60) {
+    return "50-59";
+  }
+
+  if (absoluteScore < 70) {
+    return "60-69";
+  }
+
+  return "70+";
+}
+
+function strategyName(
+  trade,
+) {
+  return (
+    trade?.strategy ||
+    trade?.metadata
+      ?.strategy ||
+    (
+      trade?.source ===
+      "SERVER_RISK_MANAGER"
+        ? "RISK_MANAGER"
+        : trade?.source ===
+            "SERVER_TRADING_ENGINE"
+          ? "SIGNAL_ENGINE"
+          : "Unknown"
+    )
+  );
+}
+
+function signalLabelName(
+  trade,
+) {
+  return (
+    trade?.label ||
+    trade?.metadata
+      ?.label ||
+    trade?.type ||
+    trade?.metadata
+      ?.type ||
+    "Unknown"
+  );
+}
+
+function exitTypeName(
+  trade,
+) {
+  const type =
+    trade?.type ||
+    trade?.metadata
+      ?.type;
+
+  if (type) {
+    return type;
+  }
+
+  const strategy =
+    strategyName(
+      trade,
+    );
+
+  if (
+    strategy ===
+    "SIGNAL_ENGINE"
+  ) {
+    return "SIGNAL_EXIT";
+  }
+
+  return "Unknown";
 }
 
 function escapeCsv(
@@ -2361,6 +2534,54 @@ export class PerformanceTrackingService {
           "timeframe",
           this.slippageBps,
         ),
+
+      /*
+       * =====================================================
+       * ROADMAP #7
+       *
+       * STRATEGY BREAKDOWN
+       * =====================================================
+       *
+       * These groups use metadata attached to
+       * CLOSED SELL executions.
+       */
+      byStrategy:
+        groupTradePerformance(
+          sellTrades,
+          strategyName,
+          this.slippageBps,
+        ),
+
+      bySignalLabel:
+        groupTradePerformance(
+          sellTrades,
+          signalLabelName,
+          this.slippageBps,
+        ),
+
+      byConfidenceBucket:
+        groupTradePerformance(
+          sellTrades,
+          confidenceBucket,
+          this.slippageBps,
+        ),
+
+      byScoreBucket:
+        groupTradePerformance(
+          sellTrades,
+          scoreBucket,
+          this.slippageBps,
+        ),
+
+      byExitType:
+        groupTradePerformance(
+          sellTrades,
+          exitTypeName,
+          this.slippageBps,
+        ),
+
+      strategyBreakdownScope:
+        "CLOSED_TRADE_EXIT_METADATA",
 
       equityStorage:
         "sqlite",
