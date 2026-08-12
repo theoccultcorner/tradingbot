@@ -42,6 +42,10 @@ import {
 } from "./routes/portfolioRoutes.js";
 
 import {
+  createReadinessRouter,
+} from "./routes/readinessRoutes.js";
+
+import {
   createScannerRouter,
 } from "./routes/scannerRoutes.js";
 
@@ -62,6 +66,7 @@ export function createApp({
   autoSelectorService,
   tradingEngineService,
   performanceService,
+  goLiveReadinessService,
   getLatestMarketState,
 }) {
   const app =
@@ -223,11 +228,7 @@ export function createApp({
   );
 
   /*
-   * =====================================================
-   * ROADMAP STEP 9
-   *
-   * PAPER VS BACKTEST COMPARISON
-   * =====================================================
+   * Paper vs backtest comparison.
    *
    * Endpoints:
    *
@@ -239,6 +240,25 @@ export function createApp({
     "/api/comparison",
     createComparisonRouter({
       performanceService,
+    }),
+  );
+
+  /*
+   * Go-live readiness.
+   *
+   * Endpoint:
+   *
+   * GET /api/readiness
+   *
+   * Optional query parameters:
+   *
+   * ?symbol=SOLUSD
+   * &timeframe=1m
+   */
+  app.use(
+    "/api/readiness",
+    createReadinessRouter({
+      goLiveReadinessService,
     }),
   );
 

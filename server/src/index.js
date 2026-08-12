@@ -17,6 +17,10 @@ import {
 } from "./services/performanceTrackingService.js";
 
 import {
+  GoLiveReadinessService,
+} from "./services/goLiveReadinessService.js";
+
+import {
   PositionRiskMonitorService,
 } from "./services/positionRiskMonitorService.js";
 
@@ -53,6 +57,11 @@ const performanceService =
       10 *
       60 *
       1000,
+  });
+
+const goLiveReadinessService =
+  new GoLiveReadinessService({
+    performanceService,
   });
 
 const marketService =
@@ -275,6 +284,8 @@ const app =
     tradingEngineService,
 
     performanceService,
+
+    goLiveReadinessService,
 
     getLatestMarketState() {
       return latestMarketState;
