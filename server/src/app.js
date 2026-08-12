@@ -14,6 +14,10 @@ import {
 } from "./routes/backtestRoutes.js";
 
 import {
+  createComparisonRouter,
+} from "./routes/comparisonRoutes.js";
+
+import {
   createDiagnosticsRouter,
 } from "./routes/diagnosticsRoutes.js";
 
@@ -214,6 +218,26 @@ export function createApp({
   app.use(
     "/api/performance",
     createPerformanceRouter({
+      performanceService,
+    }),
+  );
+
+  /*
+   * =====================================================
+   * ROADMAP STEP 9
+   *
+   * PAPER VS BACKTEST COMPARISON
+   * =====================================================
+   *
+   * Endpoints:
+   *
+   * GET /api/comparison
+   * GET /api/comparison/standard
+   * GET /api/comparison/walk-forward
+   */
+  app.use(
+    "/api/comparison",
+    createComparisonRouter({
       performanceService,
     }),
   );
