@@ -1,8 +1,21 @@
+import {
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
+
+import {
+  serverUrl,
+} from "../config/server.js";
+
+
 function formatMoney(
   value,
 ) {
   const number =
-    Number(value);
+    Number(
+      value,
+    );
 
   if (
     !Number.isFinite(
@@ -27,10 +40,13 @@ function formatMoney(
   );
 }
 
+
 function formatTime(
   timestamp,
 ) {
-  if (!timestamp) {
+  if (
+    !timestamp
+  ) {
     return "—";
   }
 
@@ -51,12 +67,84 @@ function formatTime(
   );
 }
 
+
+function formatDateTime(
+  timestamp,
+) {
+  if (
+    !timestamp
+  ) {
+    return "—";
+  }
+
+  const date =
+    new Date(
+      timestamp,
+    );
+
+  if (
+    Number.isNaN(
+      date.getTime(),
+    )
+  ) {
+    return "—";
+  }
+
+  return date.toLocaleString(
+    "en-US",
+    {
+      year:
+        "numeric",
+
+      month:
+        "short",
+
+      day:
+        "numeric",
+
+      hour:
+        "2-digit",
+
+      minute:
+        "2-digit",
+
+      second:
+        "2-digit",
+    },
+  );
+}
+
+
+function formatStatus(
+  value,
+) {
+  return String(
+    value ||
+      "Unknown",
+  )
+    .replaceAll(
+      "_",
+      " ",
+    )
+    .toLowerCase()
+    .replace(
+      /\b\w/g,
+      (
+        character,
+      ) =>
+        character.toUpperCase(),
+    );
+}
+
+
 function numberOrFallback(
   value,
   fallback,
 ) {
   const number =
-    Number(value);
+    Number(
+      value,
+    );
 
   return Number.isFinite(
     number,
@@ -64,6 +152,7 @@ function numberOrFallback(
     ? number
     : fallback;
 }
+
 
 function RiskManagerPanel({
   serverEngine,
@@ -76,6 +165,38 @@ function RiskManagerPanel({
     loadState,
   } =
     serverEngine;
+
+  const [
+    killSwitchData,
+    setKillSwitchData,
+  ] =
+    useState(
+      null,
+    );
+
+  const [
+    killSwitchLoading,
+    setKillSwitchLoading,
+  ] =
+    useState(
+      false,
+    );
+
+  const [
+    killSwitchError,
+    setKillSwitchError,
+  ] =
+    useState(
+      "",
+    );
+
+  const [
+    killSwitchMessage,
+    setKillSwitchMessage,
+  ] =
+    useState(
+      "",
+    );
 
   const settings =
     engine?.settings ||
@@ -107,6 +228,158 @@ function RiskManagerPanel({
       ?.lastRiskEvent ||
     null;
 
+
+  /*
+   * The engine state now also contains the
+   * persisted automatic kill-switch state.
+   *
+   * Prefer the dedicated endpoint response,
+   * but fall back to engine state while the
+   * dedicated endpoint is loading.
+   */
+  const killSwitch =
+    killSwitchData
+      ?.killSwitch ||
+    engine
+      ?.killSwitchState ||
+    {
+      active:
+        false,
+
+      type:
+        null,
+
+      reason:
+        null,
+
+      triggeredAt:
+        null,
+    };
+
+  const automaticKillSwitchActive =
+    Boolean(
+      killSwitch
+        ?.active,
+    );
+
+  const priceSafetyFailureCount =
+    Number(
+      killSwitchData
+        ?.priceSafetyFailureCount ??
+      engine
+        ?.priceSafetyFailureCount ??
+      0,
+    ) ||
+    0;
+
+
+  const loadKillSwitch =
+    useCallback(
+      async () => {
+        setKillSwitchLoading(
+          true,
+        );
+
+        setKillSwitchError(
+          "",
+        );
+
+        try {
+          const response =
+            await fetch(
+              serverUrl(
+                "/api/trading-engine/kill-switch",
+              ),
+              {
+                method:
+                  "GET",
+
+                cache:
+                  "no-store",
+
+                headers: {
+                  Accept:
+                    "application/json",
+                },
+              },
+            );
+
+          const data =
+            await response
+              .json();
+
+          if (
+            !response.ok ||
+            !data
+              ?.success
+          ) {
+            throw new Error(
+              data
+                ?.message ||
+                `Kill-switch request failed with status ${response.status}.`,
+            );
+          }
+
+          setKillSwitchData(
+            data,
+          );
+        } catch (
+          requestError
+        ) {
+          setKillSwitchError(
+            requestError
+              ?.message ||
+              "Could not load automatic kill-switch state.",
+          );
+        } finally {
+          setKillSwitchLoading(
+            false,
+          );
+        }
+      },
+      [],
+    );
+
+
+  useEffect(
+    () => {
+      loadKillSwitch();
+    },
+    [
+      loadKillSwitch,
+    ],
+  );
+
+
+  /*
+   * Refresh the kill-switch card whenever the
+   * main engine state changes.
+   */
+  useEffect(
+    () => {
+      if (
+        engine
+      ) {
+        loadKillSwitch();
+      }
+    },
+    [
+      engine
+        ?.settings
+        ?.emergencyStop,
+
+      engine
+        ?.status,
+
+      engine
+        ?.lastRiskEvent
+        ?.timestamp,
+
+      loadKillSwitch,
+    ],
+  );
+
+
   async function updateSetting(
     name,
     value,
@@ -124,7 +397,10 @@ function RiskManagerPanel({
       [name]:
         value,
     });
+
+    await loadKillSwitch();
   }
+
 
   async function toggleEngine() {
     await updateSetting(
@@ -133,12 +409,21 @@ function RiskManagerPanel({
     );
   }
 
+
   async function toggleEmergencyStop() {
+    setKillSwitchMessage(
+      "",
+    );
+
     await updateSetting(
       "emergencyStop",
       !emergencyStop,
     );
+
+    await loadState?.();
+    await loadKillSwitch();
   }
+
 
   async function toggleTrailingStop(
     event,
@@ -148,6 +433,100 @@ function RiskManagerPanel({
       event.target.checked,
     );
   }
+
+
+  async function resetPaperKillSwitch() {
+    const approved =
+      window.confirm(
+        "Clear the automatic emergency stop and allow the paper engine to resume monitoring?",
+      );
+
+    if (
+      !approved
+    ) {
+      return;
+    }
+
+    setKillSwitchLoading(
+      true,
+    );
+
+    setKillSwitchError(
+      "",
+    );
+
+    setKillSwitchMessage(
+      "",
+    );
+
+    try {
+      const response =
+        await fetch(
+          serverUrl(
+            "/api/trading-engine/kill-switch/reset-test",
+          ),
+          {
+            method:
+              "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+
+              Accept:
+                "application/json",
+            },
+          },
+        );
+
+      const data =
+        await response
+          .json();
+
+      if (
+        !response.ok ||
+        !data
+          ?.success
+      ) {
+        throw new Error(
+          data
+            ?.message ||
+            `Kill-switch reset failed with status ${response.status}.`,
+        );
+      }
+
+      setKillSwitchMessage(
+        data.message ||
+          "Automatic kill switch cleared.",
+      );
+
+      await loadState?.();
+      await loadKillSwitch();
+    } catch (
+      requestError
+    ) {
+      setKillSwitchError(
+        requestError
+          ?.message ||
+          "Could not reset the automatic kill switch.",
+      );
+    } finally {
+      setKillSwitchLoading(
+        false,
+      );
+    }
+  }
+
+
+  async function refreshEverything() {
+    setKillSwitchMessage(
+      "",
+    );
+
+    await loadState?.();
+    await loadKillSwitch();
+  }
+
 
   if (
     loading &&
@@ -162,7 +541,10 @@ function RiskManagerPanel({
     );
   }
 
-  if (!engine) {
+
+  if (
+    !engine
+  ) {
     return (
       <section className="panel risk-manager-panel">
         <p className="scanner-error">
@@ -172,6 +554,7 @@ function RiskManagerPanel({
       </section>
     );
   }
+
 
   return (
     <section className="panel risk-manager-panel">
@@ -210,6 +593,7 @@ function RiskManagerPanel({
         </button>
       </div>
 
+
       <div className="risk-status-row">
         <span
           className={
@@ -235,6 +619,230 @@ function RiskManagerPanel({
             : "Blocked"}
         </span>
       </div>
+
+
+      {/*
+       * =====================================================
+       * AUTOMATIC KILL SWITCH
+       * =====================================================
+       */}
+      <section className="kill-switch-panel">
+        <div className="risk-section-heading">
+          <div>
+            <p className="panel-eyebrow">
+              AUTOMATIC SAFETY SYSTEM
+            </p>
+
+            <h3>
+              Automatic Kill Switch
+            </h3>
+          </div>
+
+          <button
+            type="button"
+            className="clear-risk-events"
+            disabled={
+              killSwitchLoading
+            }
+            onClick={
+              loadKillSwitch
+            }
+          >
+            {killSwitchLoading
+              ? "Refreshing…"
+              : "Refresh"}
+          </button>
+        </div>
+
+
+        <div
+          className={
+            automaticKillSwitchActive
+              ? "kill-switch-status triggered"
+              : "kill-switch-status armed"
+          }
+        >
+          <div className="kill-switch-status-header">
+            <span
+              className={
+                automaticKillSwitchActive
+                  ? "risk-status-dot blocked"
+                  : "risk-status-dot safe"
+              }
+            />
+
+            <div>
+              <strong
+                className={
+                  automaticKillSwitchActive
+                    ? "negative"
+                    : "positive"
+                }
+              >
+                {automaticKillSwitchActive
+                  ? "TRIGGERED"
+                  : "ARMED"}
+              </strong>
+
+              <small>
+                {automaticKillSwitchActive
+                  ? "New automated entries are blocked."
+                  : "Automatic protection is monitoring the engine."}
+              </small>
+            </div>
+          </div>
+
+
+          <div className="kill-switch-details">
+            <article>
+              <span>
+                Emergency Stop
+              </span>
+
+              <strong
+                className={
+                  emergencyStop
+                    ? "negative"
+                    : "positive"
+                }
+              >
+                {emergencyStop
+                  ? "ACTIVE"
+                  : "CLEAR"}
+              </strong>
+            </article>
+
+
+            <article>
+              <span>
+                Trigger Type
+              </span>
+
+              <strong>
+                {killSwitch
+                  ?.type
+                  ? formatStatus(
+                      killSwitch
+                        .type,
+                    )
+                  : "None"}
+              </strong>
+            </article>
+
+
+            <article>
+              <span>
+                Price Safety Failures
+              </span>
+
+              <strong
+                className={
+                  priceSafetyFailureCount >
+                  0
+                    ? "negative"
+                    : "positive"
+                }
+              >
+                {
+                  priceSafetyFailureCount
+                }
+              </strong>
+            </article>
+
+
+            <article>
+              <span>
+                Triggered At
+              </span>
+
+              <strong>
+                {formatDateTime(
+                  killSwitch
+                    ?.triggeredAt,
+                )}
+              </strong>
+            </article>
+          </div>
+
+
+          {killSwitch
+            ?.reason ? (
+            <div className="kill-switch-reason">
+              <span>
+                Trigger reason
+              </span>
+
+              <p>
+                {
+                  killSwitch.reason
+                }
+              </p>
+            </div>
+          ) : (
+            <div className="kill-switch-reason">
+              <span>
+                Status
+              </span>
+
+              <p>
+                No automatic safety trigger is currently active.
+              </p>
+            </div>
+          )}
+
+
+          {automaticKillSwitchActive &&
+          killSwitch
+            ?.type ===
+            "PAPER_MODE_TEST" ? (
+            <button
+              type="button"
+              className="emergency-stop-button active"
+              disabled={
+                killSwitchLoading
+              }
+              onClick={
+                resetPaperKillSwitch
+              }
+            >
+              {killSwitchLoading
+                ? "Resetting…"
+                : "Reset Paper Test Kill Switch"}
+            </button>
+          ) : null}
+
+
+          {automaticKillSwitchActive &&
+          killSwitch
+            ?.type !==
+            "PAPER_MODE_TEST" ? (
+            <div className="kill-switch-warning">
+              This stop was triggered by an actual safety condition.
+              Review the reason before manually releasing the emergency stop.
+            </div>
+          ) : null}
+
+
+          {killSwitchMessage ? (
+            <p className="order-message">
+              {
+                killSwitchMessage
+              }
+            </p>
+          ) : null}
+
+
+          {killSwitchError ? (
+            <p className="scanner-error">
+              {
+                killSwitchError
+              }
+            </p>
+          ) : null}
+
+        </div>
+      </section>
+
 
       <div className="risk-settings-grid">
         <label>
@@ -277,6 +885,7 @@ function RiskManagerPanel({
           </div>
         </label>
 
+
         <label>
           <span>
             Take profit
@@ -316,6 +925,7 @@ function RiskManagerPanel({
             </small>
           </div>
         </label>
+
 
         <label>
           <span>
@@ -358,6 +968,7 @@ function RiskManagerPanel({
           </div>
         </label>
 
+
         <label>
           <span>
             Daily loss limit
@@ -397,6 +1008,7 @@ function RiskManagerPanel({
             </small>
           </div>
         </label>
+
 
         <label>
           <span>
@@ -451,6 +1063,7 @@ function RiskManagerPanel({
         </label>
       </div>
 
+
       <label className="trailing-toggle-row">
         <input
           type="checkbox"
@@ -469,6 +1082,7 @@ function RiskManagerPanel({
           Enable trailing stop
         </span>
       </label>
+
 
       <div className="risk-summary">
         <article>
@@ -491,6 +1105,26 @@ function RiskManagerPanel({
           </strong>
         </article>
 
+
+        <article>
+          <span>
+            Kill switch
+          </span>
+
+          <strong
+            className={
+              automaticKillSwitchActive
+                ? "negative"
+                : "positive"
+            }
+          >
+            {automaticKillSwitchActive
+              ? "TRIGGERED"
+              : "ARMED"}
+          </strong>
+        </article>
+
+
         <article>
           <span>
             Stop loss
@@ -507,6 +1141,7 @@ function RiskManagerPanel({
             %
           </strong>
         </article>
+
 
         <article>
           <span>
@@ -525,6 +1160,7 @@ function RiskManagerPanel({
           </strong>
         </article>
 
+
         <article>
           <span>
             Daily loss limit
@@ -539,6 +1175,12 @@ function RiskManagerPanel({
         </article>
       </div>
 
+
+      {/*
+       * Keep the existing manual emergency
+       * stop separate from the automatic
+       * kill switch.
+       */}
       <button
         type="button"
         className={
@@ -558,6 +1200,7 @@ function RiskManagerPanel({
           : "Activate Emergency Stop"}
       </button>
 
+
       <div className="risk-section-heading">
         <h3>
           Latest server risk event
@@ -567,15 +1210,17 @@ function RiskManagerPanel({
           type="button"
           className="clear-risk-events"
           disabled={
-            loading
+            loading ||
+            killSwitchLoading
           }
-          onClick={() =>
-            loadState?.()
+          onClick={
+            refreshEverything
           }
         >
           Refresh
         </button>
       </div>
+
 
       <div className="risk-events-list">
         {lastRiskEvent ? (
@@ -626,13 +1271,17 @@ function RiskManagerPanel({
         )}
       </div>
 
+
       {error && (
         <p className="scanner-error">
-          {error}
+          {
+            error
+          }
         </p>
       )}
     </section>
   );
 }
+
 
 export default RiskManagerPanel;
