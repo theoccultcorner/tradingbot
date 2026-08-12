@@ -8,6 +8,7 @@ import AnalyticsPanel from "./components/AnalyticsPanel";
 import AutoMarketSelectorPanel from "./components/AutoMarketSelectorPanel";
 import BacktestPanel from "./components/BacktestPanel";
 import FourMarketCharts from "./components/FourMarketCharts";
+import GoLiveReadinessPanel from "./components/GoLiveReadinessPanel";
 import IndicatorPanel from "./components/IndicatorPanel";
 import MarketScannerPanel from "./components/MarketScannerPanel";
 import MarketStats from "./components/MarketStats";
@@ -139,6 +140,9 @@ const VIEW_TITLES = {
 
   comparison:
     "Paper vs Backtest",
+
+  readiness:
+    "Go-Live Readiness",
 
   activity:
     "Server Activity",
@@ -1377,6 +1381,18 @@ function App() {
       case "comparison":
         return (
           <PaperBacktestComparisonPanel
+            symbol={
+              symbol
+            }
+            timeframe={
+              timeframe
+            }
+          />
+        );
+
+      case "readiness":
+        return (
+          <GoLiveReadinessPanel
             symbol={
               symbol
             }
