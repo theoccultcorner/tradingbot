@@ -1,59 +1,118 @@
-import { useState } from "react";
-import { serverUrl } from "../config/server.js";
+import {
+  useState,
+} from "react";
 
-function formatMoney(value) {
-  const number = Number(value);
+import {
+  serverUrl,
+} from "../config/server.js";
 
-  if (!Number.isFinite(number)) {
+function formatMoney(
+  value,
+) {
+  const number =
+    Number(
+      value,
+    );
+
+  if (
+    !Number.isFinite(
+      number,
+    )
+  ) {
     return "—";
   }
 
-  return number.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 2,
-  });
+  return number.toLocaleString(
+    "en-US",
+    {
+      style:
+        "currency",
+
+      currency:
+        "USD",
+
+      maximumFractionDigits:
+        2,
+    },
+  );
 }
 
 function formatPercent(
   value,
   signed = true,
 ) {
-  const number = Number(value);
+  const number =
+    Number(
+      value,
+    );
 
-  if (!Number.isFinite(number)) {
+  if (
+    !Number.isFinite(
+      number,
+    )
+  ) {
     return "—";
   }
 
-  return `${
-    signed && number >= 0
+  const prefix =
+    signed &&
+    number >
+      0
       ? "+"
-      : ""
-  }${number.toFixed(2)}%`;
+      : "";
+
+  return `${prefix}${number.toFixed(
+    2,
+  )}%`;
 }
 
 function formatProfitFactor(
   value,
 ) {
-  if (value === null) {
+  if (
+    value ===
+    null
+  ) {
     return "∞";
   }
 
-  const number = Number(value);
+  const number =
+    Number(
+      value,
+    );
 
-  return Number.isFinite(number)
-    ? number.toFixed(2)
-    : "—";
+  if (
+    !Number.isFinite(
+      number,
+    )
+  ) {
+    return "—";
+  }
+
+  return number.toFixed(
+    2,
+  );
 }
 
-function getClass(value) {
-  const number = Number(value);
+function getTone(
+  value,
+) {
+  const number =
+    Number(
+      value,
+    );
 
-  if (number > 0) {
+  if (
+    number >
+    0
+  ) {
     return "positive";
   }
 
-  if (number < 0) {
+  if (
+    number <
+    0
+  ) {
     return "negative";
   }
 
@@ -63,29 +122,187 @@ function getClass(value) {
 function ResultCard({
   label,
   value,
-  className = "",
-  small = null,
+  tone =
+    "neutral",
+  detail =
+    "",
 }) {
+  const toneColor =
+    tone ===
+    "positive"
+      ? "#4ade80"
+      : tone ===
+          "negative"
+        ? "#fb7185"
+        : "#f8fafc";
+
   return (
-    <article>
-      <span>
+    <article
+      style={{
+        minWidth:
+          0,
+
+        padding:
+          "16px",
+
+        border:
+          "1px solid rgba(148, 163, 184, 0.12)",
+
+        borderRadius:
+          "14px",
+
+        background:
+          "rgba(15, 23, 42, 0.48)",
+      }}
+    >
+      <span
+        style={{
+          display:
+            "block",
+
+          marginBottom:
+            "8px",
+
+          color:
+            "#94a3b8",
+
+          fontSize:
+            "11px",
+
+          fontWeight:
+            700,
+
+          letterSpacing:
+            "0.08em",
+
+          textTransform:
+            "uppercase",
+        }}
+      >
         {label}
       </span>
 
       <strong
-        className={
-          className
-        }
+        style={{
+          display:
+            "block",
+
+          color:
+            toneColor,
+
+          fontSize:
+            "20px",
+
+          lineHeight:
+            1.2,
+        }}
       >
         {value}
       </strong>
 
-      {small ? (
-        <small>
-          {small}
+      {detail ? (
+        <small
+          style={{
+            display:
+              "block",
+
+            marginTop:
+              "6px",
+
+            color:
+              "#64748b",
+          }}
+        >
+          {detail}
         </small>
       ) : null}
     </article>
+  );
+}
+
+function Field({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  step,
+}) {
+  return (
+    <label
+      style={{
+        display:
+          "flex",
+
+        flexDirection:
+          "column",
+
+        gap:
+          "7px",
+
+        minWidth:
+          0,
+      }}
+    >
+      <span
+        style={{
+          color:
+            "#94a3b8",
+
+          fontSize:
+            "12px",
+
+          fontWeight:
+            600,
+        }}
+      >
+        {label}
+      </span>
+
+      <input
+        type="number"
+        min={
+          min
+        }
+        max={
+          max
+        }
+        step={
+          step
+        }
+        value={
+          value
+        }
+        onChange={
+          onChange
+        }
+        style={{
+          width:
+            "100%",
+
+          boxSizing:
+            "border-box",
+
+          border:
+            "1px solid rgba(148, 163, 184, 0.16)",
+
+          borderRadius:
+            "10px",
+
+          padding:
+            "10px 11px",
+
+          background:
+            "rgba(15, 23, 42, 0.62)",
+
+          color:
+            "#f8fafc",
+
+          outline:
+            "none",
+        }}
+      />
+    </label>
   );
 }
 
@@ -174,8 +391,8 @@ function BacktestPanel({
     );
 
   const [
-    walkForwardStatus,
-    setWalkForwardStatus,
+    status,
+    setStatus,
   ] =
     useState(
       "",
@@ -186,7 +403,7 @@ function BacktestPanel({
     "walk-forward";
 
   function updateSetting(
-    name,
+    key,
     value,
   ) {
     setSettings(
@@ -195,7 +412,7 @@ function BacktestPanel({
       ) => ({
         ...previous,
 
-        [name]:
+        [key]:
           value,
       }),
     );
@@ -222,54 +439,12 @@ function BacktestPanel({
       "",
     );
 
-    setWalkForwardStatus(
+    setStatus(
       "",
     );
   }
 
-  async function parseResponse(
-    response,
-  ) {
-    const text =
-      await response.text();
-
-    let data =
-      {};
-
-    if (
-      text
-    ) {
-      try {
-        data =
-          JSON.parse(
-            text,
-          );
-      } catch {
-        throw new Error(
-          "The backtest server returned invalid JSON.",
-        );
-      }
-    }
-
-    if (
-      !response.ok ||
-      data.success ===
-        false
-    ) {
-      throw new Error(
-        data.message ||
-          `The backtest failed with status ${response.status}.`,
-      );
-    }
-
-    return (
-      data.result ||
-      data.data ||
-      data
-    );
-  }
-
-  function buildCommonRequest() {
+  function commonRequestBody() {
     return {
       symbol,
 
@@ -318,21 +493,63 @@ function BacktestPanel({
     };
   }
 
-  async function runBacktest() {
+  async function parseJsonResponse(
+    response,
+  ) {
+    const text =
+      await response.text();
+
+    let data =
+      {};
+
+    if (
+      text
+    ) {
+      try {
+        data =
+          JSON.parse(
+            text,
+          );
+      } catch {
+        throw new Error(
+          "The server returned invalid JSON.",
+        );
+      }
+    }
+
+    if (
+      !response.ok ||
+      data.success ===
+        false
+    ) {
+      throw new Error(
+        data.message ||
+          `Request failed with status ${response.status}.`,
+      );
+    }
+
+    return (
+      data.result ||
+      data.data ||
+      data
+    );
+  }
+
+  async function runStandardBacktest() {
     setLoading(
       true,
-    );
-
-    setError(
-      "",
     );
 
     setResult(
       null,
     );
 
-    setWalkForwardStatus(
+    setError(
       "",
+    );
+
+    setStatus(
+      "Running standard backtest…",
     );
 
     try {
@@ -352,7 +569,7 @@ function BacktestPanel({
 
             body:
               JSON.stringify({
-                ...buildCommonRequest(),
+                ...commonRequestBody(),
 
                 limit:
                   Number(
@@ -362,14 +579,25 @@ function BacktestPanel({
           },
         );
 
-      setResult(
-        await parseResponse(
+      const nextResult =
+        await parseJsonResponse(
           response,
-        ),
+        );
+
+      setResult(
+        nextResult,
+      );
+
+      setStatus(
+        "Backtest completed.",
       );
     } catch (
       requestError
     ) {
+      setStatus(
+        "",
+      );
+
       setError(
         requestError.message ||
           "The backtest failed.",
@@ -396,7 +624,7 @@ function BacktestPanel({
     );
   }
 
-  async function getRecentWalkForwardTests() {
+  async function loadRecentWalkForwardTests() {
     const response =
       await fetch(
         serverUrl(
@@ -406,13 +634,13 @@ function BacktestPanel({
           method:
             "GET",
 
+          cache:
+            "no-store",
+
           headers: {
             Accept:
               "application/json",
           },
-
-          cache:
-            "no-store",
         },
       );
 
@@ -422,19 +650,17 @@ function BacktestPanel({
     let data =
       {};
 
-    if (
-      text
-    ) {
-      try {
-        data =
-          JSON.parse(
-            text,
-          );
-      } catch {
-        throw new Error(
-          "The saved walk-forward endpoint returned invalid JSON.",
-        );
-      }
+    try {
+      data =
+        text
+          ? JSON.parse(
+              text,
+            )
+          : {};
+    } catch {
+      throw new Error(
+        "Recent walk-forward results returned invalid JSON.",
+      );
     }
 
     if (
@@ -444,7 +670,7 @@ function BacktestPanel({
     ) {
       throw new Error(
         data.message ||
-          `Could not load saved walk-forward tests (${response.status}).`,
+          "Could not load recent walk-forward tests.",
       );
     }
 
@@ -455,70 +681,13 @@ function BacktestPanel({
       : [];
   }
 
-  function matchesNewWalkForwardResult(
-    test,
-    baselineIds,
-    requestStartedAt,
-  ) {
-    if (
-      !test ||
-      baselineIds.has(
-        test.id,
-      )
-    ) {
-      return false;
-    }
-
-    if (
-      String(
-        test.symbol ||
-          "",
-      ).toUpperCase() !==
-        String(
-          symbol ||
-            "",
-        ).toUpperCase() ||
-      String(
-        test.timeframe ||
-          "",
-      ) !==
-        String(
-          timeframe ||
-            "",
-        )
-    ) {
-      return false;
-    }
-
-    const createdAt =
-      Number(
-        test.createdAt,
-      );
-
-    /*
-     * Small clock tolerance so we do not
-     * accidentally load an old saved run.
-     */
-    if (
-      Number.isFinite(
-        createdAt,
-      ) &&
-      createdAt <
-        requestStartedAt -
-          15000
-    ) {
-      return false;
-    }
-
-    return true;
-  }
-
-  async function waitForSavedWalkForwardResult({
-    baselineIds,
-    requestStartedAt,
-    attempts = 30,
-    delayMs = 4000,
+  async function waitForWalkForwardResult({
+    existingIds,
+    startedAt,
   }) {
+    const attempts =
+      30;
+
     for (
       let attempt =
         0;
@@ -534,24 +703,72 @@ function BacktestPanel({
         0
       ) {
         await sleep(
-          delayMs,
+          4000,
         );
       }
 
+      setStatus(
+        `Server is still processing. Checking saved results… ${attempt + 1}/${attempts}`,
+      );
+
       try {
         const tests =
-          await getRecentWalkForwardTests();
+          await loadRecentWalkForwardTests();
 
         const match =
           tests.find(
             (
               test,
-            ) =>
-              matchesNewWalkForwardResult(
-                test,
-                baselineIds,
-                requestStartedAt,
-              ),
+            ) => {
+              if (
+                !test ||
+                existingIds.has(
+                  test.id,
+                )
+              ) {
+                return false;
+              }
+
+              if (
+                String(
+                  test.symbol ||
+                    "",
+                ).toUpperCase() !==
+                String(
+                  symbol ||
+                    "",
+                ).toUpperCase()
+              ) {
+                return false;
+              }
+
+              if (
+                String(
+                  test.timeframe ||
+                    "",
+                ) !==
+                String(
+                  timeframe ||
+                    "",
+                )
+              ) {
+                return false;
+              }
+
+              const createdAt =
+                Number(
+                  test.createdAt,
+                );
+
+              return (
+                !Number.isFinite(
+                  createdAt,
+                ) ||
+                createdAt >=
+                  startedAt -
+                    15000
+              );
+            },
           );
 
         if (
@@ -560,18 +777,13 @@ function BacktestPanel({
           return match;
         }
       } catch (
-        pollError
+        pollingError
       ) {
         console.warn(
-          "Walk-forward result check failed:",
-          pollError.message ||
-            pollError,
+          "Walk-forward polling error:",
+          pollingError,
         );
       }
-
-      setWalkForwardStatus(
-        `The server is still processing the walk-forward test. Checking saved results… (${attempt + 1}/${attempts})`,
-      );
     }
 
     return null;
@@ -582,39 +794,31 @@ function BacktestPanel({
       true,
     );
 
-    setError(
-      "",
-    );
-
     setResult(
       null,
     );
 
-    setWalkForwardStatus(
-      "Starting walk-forward test…",
+    setError(
+      "",
     );
 
-    const requestStartedAt =
+    setStatus(
+      "Preparing walk-forward test…",
+    );
+
+    const startedAt =
       Date.now();
 
-    let baselineIds =
+    let existingIds =
       new Set();
 
-    /*
-     * Remember the tests that already existed
-     * before this run begins.
-     *
-     * If the long POST connection later dies,
-     * we can distinguish the newly saved result
-     * from an older result.
-     */
     try {
-      const existingTests =
-        await getRecentWalkForwardTests();
+      const existing =
+        await loadRecentWalkForwardTests();
 
-      baselineIds =
+      existingIds =
         new Set(
-          existingTests
+          existing
             .map(
               (
                 test,
@@ -630,38 +834,13 @@ function BacktestPanel({
     ) {
       console.warn(
         "Could not capture existing walk-forward tests:",
-        baselineError.message ||
-          baselineError,
+        baselineError,
       );
     }
 
-    const requestBody = {
-      ...buildCommonRequest(),
-
-      limit:
-        Number(
-          settings.walkForwardLimit,
-        ),
-
-      trainingWindow:
-        Number(
-          settings.trainingWindow,
-        ),
-
-      testingWindow:
-        Number(
-          settings.testingWindow,
-        ),
-
-      stepSize:
-        Number(
-          settings.stepSize,
-        ),
-    };
-
     try {
-      setWalkForwardStatus(
-        "Running training and out-of-sample windows on the server…",
+      setStatus(
+        "Optimizing training windows and testing unseen data…",
       );
 
       const response =
@@ -679,66 +858,37 @@ function BacktestPanel({
             },
 
             body:
-              JSON.stringify(
-                requestBody,
-              ),
+              JSON.stringify({
+                ...commonRequestBody(),
+
+                limit:
+                  Number(
+                    settings.walkForwardLimit,
+                  ),
+
+                trainingWindow:
+                  Number(
+                    settings.trainingWindow,
+                  ),
+
+                testingWindow:
+                  Number(
+                    settings.testingWindow,
+                  ),
+
+                stepSize:
+                  Number(
+                    settings.stepSize,
+                  ),
+              }),
           },
         );
 
-      /*
-       * A 4xx error means the server explicitly
-       * rejected the settings.
-       *
-       * Do not poll because no valid job should
-       * be running.
-       */
-      if (
-        response.status >=
-          400 &&
-        response.status <
-          500
-      ) {
-        const text =
-          await response.text();
-
-        let data =
-          {};
-
-        try {
-          data =
-            text
-              ? JSON.parse(
-                  text,
-                )
-              : {};
-        } catch {
-          data =
-            {};
-        }
-
-        setError(
-          data.message ||
-            `The walk-forward request was rejected (${response.status}).`,
-        );
-
-        setWalkForwardStatus(
-          "",
-        );
-
-        return;
-      }
-
-      /*
-       * Ideal path:
-       *
-       * The HTTP request survives until the
-       * server finishes and returns the result.
-       */
       if (
         response.ok
       ) {
         const nextResult =
-          await parseResponse(
+          await parseJsonResponse(
             response,
           );
 
@@ -746,34 +896,40 @@ function BacktestPanel({
           nextResult,
         );
 
-        setWalkForwardStatus(
-          "Walk-forward test completed successfully.",
+        setStatus(
+          "Walk-forward test completed.",
         );
 
         return;
       }
 
-      /*
-       * Render/proxy connections can terminate
-       * while a long calculation continues.
-       *
-       * The backend may still save the result,
-       * so fall through to the polling recovery.
-       */
+      if (
+        response.status >=
+          400 &&
+        response.status <
+          500
+      ) {
+        await parseJsonResponse(
+          response,
+        );
+
+        return;
+      }
+
       throw new Error(
-        `The HTTP connection ended with status ${response.status} while the walk-forward job was running.`,
+        `The walk-forward connection ended with status ${response.status}.`,
       );
     } catch (
       requestError
     ) {
-      setWalkForwardStatus(
-        "The browser connection ended before the result arrived. The server may still be finishing the test, so saved results are being checked automatically…",
+      setStatus(
+        "The browser connection ended before the server finished. Checking for the saved result automatically…",
       );
 
       const savedResult =
-        await waitForSavedWalkForwardResult({
-          baselineIds,
-          requestStartedAt,
+        await waitForWalkForwardResult({
+          existingIds,
+          startedAt,
         });
 
       if (
@@ -787,22 +943,20 @@ function BacktestPanel({
           "",
         );
 
-        setWalkForwardStatus(
-          "Walk-forward test completed. Loaded the saved server result.",
+        setStatus(
+          "Walk-forward test completed and the saved result was loaded.",
         );
 
         return;
       }
 
-      setWalkForwardStatus(
+      setStatus(
         "",
       );
 
       setError(
-        `${
-          requestError.message ||
-          "The walk-forward connection ended before a response was received."
-        } No new saved walk-forward result appeared after repeated checks.`,
+        requestError.message ||
+          "The walk-forward test did not return a result.",
       );
     } finally {
       setLoading(
@@ -811,112 +965,136 @@ function BacktestPanel({
     }
   }
 
-  const commonFields = [
-    [
-      "startingCash",
-      "Starting cash",
-      1,
-      1,
-    ],
-
-    [
-      "buyAmount",
-      "Buy amount",
-      1,
-      1,
-    ],
-
-    [
-      "minimumScore",
-      "Min score",
-      0,
-      1,
-      100,
-    ],
-
-    [
-      "minimumConfidence",
-      "Min confidence",
-      0,
-      1,
-      100,
-    ],
-
-    [
-      "stopLossPercent",
-      "Stop loss %",
-      0.1,
-      0.1,
-    ],
-
-    [
-      "takeProfitPercent",
-      "Take profit %",
-      0.1,
-      0.1,
-    ],
-
-    [
-      "feePercent",
-      "Fee %",
-      0,
-      0.01,
-    ],
-
-    [
-      "minimumHistory",
-      "Indicator history",
-      20,
-      10,
-    ],
-  ];
+  const runTest =
+    isWalkForward
+      ? runWalkForwardTest
+      : runStandardBacktest;
 
   return (
-    <section className="panel-card backtest-panel">
-      <div className="panel-heading">
-        <div>
-          <span className="eyebrow">
-            SERVER-SIDE VALIDATION
-          </span>
-
-          <h2>
-            Strategy 2.0 Backtester
-          </h2>
-        </div>
-
-        <span className="backtest-market">
-          {symbol.replace(
-            "USD",
-            "/USD",
-          )}{" "}
-          ·{" "}
-          {timeframe}
-        </span>
-      </div>
+    <section
+      className="panel-card backtest-panel"
+      style={{
+        overflow:
+          "hidden",
+      }}
+    >
+      {/* HEADER */}
 
       <div
         style={{
           display:
             "flex",
 
+          justifyContent:
+            "space-between",
+
+          alignItems:
+            "flex-start",
+
           gap:
-            "10px",
+            "16px",
 
           marginBottom:
-            "20px",
+            "22px",
 
           flexWrap:
             "wrap",
         }}
       >
+        <div>
+          <span className="eyebrow">
+            STRATEGY VALIDATION
+          </span>
+
+          <h2
+            style={{
+              marginBottom:
+                "6px",
+            }}
+          >
+            Backtesting Lab
+          </h2>
+
+          <p
+            style={{
+              margin:
+                0,
+
+              color:
+                "#64748b",
+
+              fontSize:
+                "13px",
+            }}
+          >
+            Test the Strategy 2.0 engine against historical market data.
+          </p>
+        </div>
+
+        <div
+          style={{
+            padding:
+              "8px 12px",
+
+            border:
+              "1px solid rgba(148, 163, 184, 0.14)",
+
+            borderRadius:
+              "999px",
+
+            background:
+              "rgba(15, 23, 42, 0.55)",
+
+            color:
+              "#cbd5e1",
+
+            fontSize:
+              "12px",
+
+            fontWeight:
+              700,
+          }}
+        >
+          {symbol.replace(
+            "USD",
+            "/USD",
+          )}
+          {" · "}
+          {timeframe}
+        </div>
+      </div>
+
+      {/* SEGMENTED TOGGLE */}
+
+      <div
+        style={{
+          display:
+            "grid",
+
+          gridTemplateColumns:
+            "1fr 1fr",
+
+          gap:
+            "5px",
+
+          padding:
+            "5px",
+
+          marginBottom:
+            "24px",
+
+          border:
+            "1px solid rgba(148, 163, 184, 0.12)",
+
+          borderRadius:
+            "14px",
+
+          background:
+            "rgba(15, 23, 42, 0.4)",
+        }}
+      >
         <button
           type="button"
-          className={
-            mode ===
-            "standard"
-              ? "run-backtest-button"
-              : ""
-          }
           disabled={
             loading
           }
@@ -925,18 +1103,48 @@ function BacktestPanel({
               "standard",
             )
           }
+          style={{
+            border:
+              mode ===
+              "standard"
+                ? "1px solid rgba(148, 163, 184, 0.18)"
+                : "1px solid transparent",
+
+            borderRadius:
+              "10px",
+
+            padding:
+              "12px 14px",
+
+            cursor:
+              loading
+                ? "not-allowed"
+                : "pointer",
+
+            background:
+              mode ===
+              "standard"
+                ? "rgba(51, 65, 85, 0.85)"
+                : "transparent",
+
+            color:
+              mode ===
+              "standard"
+                ? "#ffffff"
+                : "#94a3b8",
+
+            fontWeight:
+              700,
+
+            transition:
+              "all 160ms ease",
+          }}
         >
           Standard Backtest
         </button>
 
         <button
           type="button"
-          className={
-            mode ===
-            "walk-forward"
-              ? "run-backtest-button"
-              : ""
-          }
           disabled={
             loading
           }
@@ -945,605 +1153,717 @@ function BacktestPanel({
               "walk-forward",
             )
           }
+          style={{
+            border:
+              mode ===
+              "walk-forward"
+                ? "1px solid rgba(56, 189, 248, 0.28)"
+                : "1px solid transparent",
+
+            borderRadius:
+              "10px",
+
+            padding:
+              "12px 14px",
+
+            cursor:
+              loading
+                ? "not-allowed"
+                : "pointer",
+
+            background:
+              mode ===
+              "walk-forward"
+                ? "rgba(14, 116, 144, 0.28)"
+                : "transparent",
+
+            color:
+              mode ===
+              "walk-forward"
+                ? "#e0f2fe"
+                : "#94a3b8",
+
+            fontWeight:
+              700,
+
+            transition:
+              "all 160ms ease",
+          }}
         >
           Walk-Forward Test
         </button>
       </div>
 
-      {isWalkForward ? (
-        <p className="backtest-description">
-          Walk-forward testing optimizes settings on historical training windows and evaluates them only on the unseen test windows that follow.
-        </p>
-      ) : null}
+      {/* MODE DESCRIPTION */}
 
-      <div className="backtest-settings">
-        {commonFields.map(
-          ([
-            name,
-            label,
-            min,
-            step,
-            max,
-          ]) => (
-            <label
-              key={
-                name
-              }
-            >
-              <span>
-                {label}
-              </span>
+      <div
+        style={{
+          marginBottom:
+            "22px",
 
-              <input
-                type="number"
-                min={
-                  min
-                }
-                max={
-                  max
-                }
-                step={
-                  step
-                }
-                value={
-                  settings[
-                    name
-                  ]
-                }
-                onChange={(
-                  event,
-                ) =>
-                  updateSetting(
-                    name,
-                    event.target
-                      .value,
-                  )
-                }
-              />
-            </label>
-          ),
-        )}
+          padding:
+            "13px 15px",
 
-        {!isWalkForward ? (
-          <label>
-            <span>
-              Candles
-            </span>
+          borderRadius:
+            "12px",
 
-            <input
-              type="number"
-              min="250"
-              max="5000"
-              step="50"
+          border:
+            isWalkForward
+              ? "1px solid rgba(56, 189, 248, 0.13)"
+              : "1px solid rgba(148, 163, 184, 0.1)",
+
+          background:
+            isWalkForward
+              ? "rgba(14, 116, 144, 0.08)"
+              : "rgba(15, 23, 42, 0.32)",
+
+          color:
+            "#94a3b8",
+
+          fontSize:
+            "13px",
+
+          lineHeight:
+            1.5,
+        }}
+      >
+        {isWalkForward
+          ? "Walk-forward mode optimizes parameters using training data, then evaluates those settings on the unseen market window that follows."
+          : "Standard mode runs Strategy 2.0 through one continuous historical dataset using the settings below."}
+      </div>
+
+      {/* STRATEGY SETTINGS */}
+
+      <div
+        style={{
+          padding:
+            "18px",
+
+          marginBottom:
+            "18px",
+
+          border:
+            "1px solid rgba(148, 163, 184, 0.1)",
+
+          borderRadius:
+            "14px",
+
+          background:
+            "rgba(15, 23, 42, 0.27)",
+        }}
+      >
+        <div
+          style={{
+            marginBottom:
+              "16px",
+          }}
+        >
+          <span className="eyebrow">
+            STRATEGY SETTINGS
+          </span>
+
+          <h3
+            style={{
+              margin:
+                "5px 0 0",
+            }}
+          >
+            Trading Parameters
+          </h3>
+        </div>
+
+        <div
+          style={{
+            display:
+              "grid",
+
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(145px, 1fr))",
+
+            gap:
+              "14px",
+          }}
+        >
+          <Field
+            label="Starting cash"
+            value={
+              settings.startingCash
+            }
+            min="1"
+            step="1"
+            onChange={(
+              event,
+            ) =>
+              updateSetting(
+                "startingCash",
+                event.target.value,
+              )
+            }
+          />
+
+          <Field
+            label="Buy amount"
+            value={
+              settings.buyAmount
+            }
+            min="1"
+            step="1"
+            onChange={(
+              event,
+            ) =>
+              updateSetting(
+                "buyAmount",
+                event.target.value,
+              )
+            }
+          />
+
+          <Field
+            label="Minimum score"
+            value={
+              settings.minimumScore
+            }
+            min="0"
+            max="100"
+            step="1"
+            onChange={(
+              event,
+            ) =>
+              updateSetting(
+                "minimumScore",
+                event.target.value,
+              )
+            }
+          />
+
+          <Field
+            label="Min confidence"
+            value={
+              settings.minimumConfidence
+            }
+            min="0"
+            max="100"
+            step="1"
+            onChange={(
+              event,
+            ) =>
+              updateSetting(
+                "minimumConfidence",
+                event.target.value,
+              )
+            }
+          />
+
+          <Field
+            label="Stop loss %"
+            value={
+              settings.stopLossPercent
+            }
+            min="0.1"
+            step="0.1"
+            onChange={(
+              event,
+            ) =>
+              updateSetting(
+                "stopLossPercent",
+                event.target.value,
+              )
+            }
+          />
+
+          <Field
+            label="Take profit %"
+            value={
+              settings.takeProfitPercent
+            }
+            min="0.1"
+            step="0.1"
+            onChange={(
+              event,
+            ) =>
+              updateSetting(
+                "takeProfitPercent",
+                event.target.value,
+              )
+            }
+          />
+
+          <Field
+            label="Fee %"
+            value={
+              settings.feePercent
+            }
+            min="0"
+            step="0.01"
+            onChange={(
+              event,
+            ) =>
+              updateSetting(
+                "feePercent",
+                event.target.value,
+              )
+            }
+          />
+
+          <Field
+            label="Indicator history"
+            value={
+              settings.minimumHistory
+            }
+            min="20"
+            step="10"
+            onChange={(
+              event,
+            ) =>
+              updateSetting(
+                "minimumHistory",
+                event.target.value,
+              )
+            }
+          />
+        </div>
+      </div>
+
+      {/* MODE SPECIFIC SETTINGS */}
+
+      <div
+        style={{
+          padding:
+            "18px",
+
+          marginBottom:
+            "20px",
+
+          border:
+            isWalkForward
+              ? "1px solid rgba(56, 189, 248, 0.13)"
+              : "1px solid rgba(148, 163, 184, 0.1)",
+
+          borderRadius:
+            "14px",
+
+          background:
+            isWalkForward
+              ? "rgba(14, 116, 144, 0.055)"
+              : "rgba(15, 23, 42, 0.27)",
+        }}
+      >
+        <div
+          style={{
+            marginBottom:
+              "16px",
+          }}
+        >
+          <span className="eyebrow">
+            {isWalkForward
+              ? "ROLLING VALIDATION"
+              : "HISTORICAL DATA"}
+          </span>
+
+          <h3
+            style={{
+              margin:
+                "5px 0 0",
+            }}
+          >
+            {isWalkForward
+              ? "Walk-Forward Configuration"
+              : "Backtest Configuration"}
+          </h3>
+        </div>
+
+        <div
+          style={{
+            display:
+              "grid",
+
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(155px, 1fr))",
+
+            gap:
+              "14px",
+          }}
+        >
+          {!isWalkForward ? (
+            <Field
+              label="Historical candles"
               value={
                 settings.limit
               }
+              min="250"
+              max="5000"
+              step="50"
               onChange={(
                 event,
               ) =>
                 updateSetting(
                   "limit",
-                  event.target
-                    .value,
+                  event.target.value,
                 )
               }
             />
-          </label>
-        ) : null}
-      </div>
-
-      {isWalkForward ? (
-        <>
-          <div
-            className="panel-heading"
-            style={{
-              marginTop:
-                "24px",
-            }}
-          >
-            <div>
-              <span className="eyebrow">
-                OUT-OF-SAMPLE VALIDATION
-              </span>
-
-              <h3>
-                Walk-Forward Windows
-              </h3>
-            </div>
-          </div>
-
-          <div className="backtest-settings">
-            <label>
-              <span>
-                Historical candles
-              </span>
-
-              <input
-                type="number"
+          ) : (
+            <>
+              <Field
+                label="Historical candles"
+                value={
+                  settings.walkForwardLimit
+                }
                 min="500"
                 max="5000"
                 step="100"
-                value={
-                  settings
-                    .walkForwardLimit
-                }
                 onChange={(
                   event,
                 ) =>
                   updateSetting(
                     "walkForwardLimit",
-                    event.target
-                      .value,
+                    event.target.value,
                   )
                 }
               />
-            </label>
 
-            <label>
-              <span>
-                Training window
-              </span>
-
-              <input
-                type="number"
+              <Field
+                label="Training window"
+                value={
+                  settings.trainingWindow
+                }
                 min="250"
                 max="4000"
                 step="50"
-                value={
-                  settings
-                    .trainingWindow
-                }
                 onChange={(
                   event,
                 ) =>
                   updateSetting(
                     "trainingWindow",
-                    event.target
-                      .value,
+                    event.target.value,
                   )
                 }
               />
-            </label>
 
-            <label>
-              <span>
-                Testing window
-              </span>
-
-              <input
-                type="number"
+              <Field
+                label="Testing window"
+                value={
+                  settings.testingWindow
+                }
                 min="10"
                 max="2000"
                 step="10"
-                value={
-                  settings
-                    .testingWindow
-                }
                 onChange={(
                   event,
                 ) =>
                   updateSetting(
                     "testingWindow",
-                    event.target
-                      .value,
+                    event.target.value,
                   )
                 }
               />
-            </label>
 
-            <label>
-              <span>
-                Step size
-              </span>
-
-              <input
-                type="number"
+              <Field
+                label="Step size"
+                value={
+                  settings.stepSize
+                }
                 min="1"
                 max="2000"
                 step="10"
-                value={
-                  settings
-                    .stepSize
-                }
                 onChange={(
                   event,
                 ) =>
                   updateSetting(
                     "stepSize",
-                    event.target
-                      .value,
+                    event.target.value,
                   )
                 }
               />
-            </label>
-          </div>
-        </>
-      ) : null}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* RUN BUTTON */}
 
       <button
         type="button"
-        className="run-backtest-button"
         disabled={
           loading
         }
         onClick={
-          isWalkForward
-            ? runWalkForwardTest
-            : runBacktest
+          runTest
         }
+        style={{
+          width:
+            "100%",
+
+          border:
+            isWalkForward
+              ? "1px solid rgba(56, 189, 248, 0.28)"
+              : "1px solid rgba(99, 102, 241, 0.28)",
+
+          borderRadius:
+            "12px",
+
+          padding:
+            "14px 18px",
+
+          cursor:
+            loading
+              ? "wait"
+              : "pointer",
+
+          background:
+            loading
+              ? "rgba(51, 65, 85, 0.7)"
+              : isWalkForward
+                ? "linear-gradient(135deg, rgba(14,116,144,0.9), rgba(2,132,199,0.75))"
+                : "linear-gradient(135deg, rgba(79,70,229,0.88), rgba(99,102,241,0.72))",
+
+          color:
+            "#ffffff",
+
+          fontSize:
+            "14px",
+
+          fontWeight:
+            800,
+
+          letterSpacing:
+            "0.01em",
+
+          opacity:
+            loading
+              ? 0.72
+              : 1,
+        }}
       >
         {loading
           ? isWalkForward
-            ? "Running walk-forward test…"
-            : "Running server backtest…"
+            ? "Running Walk-Forward Test…"
+            : "Running Standard Backtest…"
           : isWalkForward
-            ? "Run and Save Walk-Forward Test"
-            : "Run and Save Backtest"}
+            ? "Run Walk-Forward Test"
+            : "Run Standard Backtest"}
       </button>
 
-      {walkForwardStatus &&
-      isWalkForward ? (
-        <p className="backtest-description">
-          {
-            walkForwardStatus
-          }
-        </p>
+      {/* STATUS */}
+
+      {status ? (
+        <div
+          style={{
+            marginTop:
+              "14px",
+
+            padding:
+              "11px 13px",
+
+            borderRadius:
+              "10px",
+
+            background:
+              "rgba(15, 23, 42, 0.42)",
+
+            color:
+              "#94a3b8",
+
+            fontSize:
+              "12px",
+          }}
+        >
+          {status}
+        </div>
       ) : null}
 
       {error ? (
-        <p className="backtest-error">
+        <div
+          className="backtest-error"
+          style={{
+            marginTop:
+              "14px",
+
+            padding:
+              "12px 14px",
+
+            border:
+              "1px solid rgba(251, 113, 133, 0.2)",
+
+            borderRadius:
+              "10px",
+
+            background:
+              "rgba(159, 18, 57, 0.1)",
+          }}
+        >
           {error}
-        </p>
+        </div>
       ) : null}
 
-      {result &&
-      !isWalkForward ? (
-        <>
-          <div className="backtest-summary">
-            <ResultCard
-              label="Ending equity"
-              value={
-                formatMoney(
-                  result
-                    .endingEquity,
-                )
-              }
-            />
+      {/* RESULTS */}
 
-            <ResultCard
-              label="Total profit"
-              value={
-                formatMoney(
-                  result
-                    .totalProfit,
-                )
-              }
-              className={
-                getClass(
-                  result
-                    .totalProfit,
-                )
-              }
-            />
+      {result ? (
+        <div
+          style={{
+            marginTop:
+              "28px",
 
-            <ResultCard
-              label="Total return"
-              value={
-                formatPercent(
-                  result
-                    .totalReturnPercent,
-                )
-              }
-              className={
-                getClass(
-                  result
-                    .totalReturnPercent,
-                )
-              }
-            />
+            paddingTop:
+              "24px",
 
-            <ResultCard
-              label="Win rate"
-              value={
-                formatPercent(
-                  result
-                    .winRate,
-                  false,
-                )
-              }
-            />
-
-            <ResultCard
-              label="Profit factor"
-              value={
-                formatProfitFactor(
-                  result
-                    .profitFactor,
-                )
-              }
-            />
-
-            <ResultCard
-              label="Max drawdown"
-              value={
-                formatPercent(
-                  result
-                    .maximumDrawdownPercent,
-                  false,
-                )
-              }
-              className="negative"
-            />
-
-            <ResultCard
-              label="Closed trades"
-              value={
-                Number(
-                  result
-                    .closedTradeCount ||
-                    0,
-                )
-              }
-            />
-
-            <ResultCard
-              label="Fees"
-              value={
-                formatMoney(
-                  result
-                    .totalFees,
-                )
-              }
-            />
-          </div>
-
-          <p className="backtest-description">
-            {result.id ? (
-              <>
-                Saved as backtest{" "}
-
-                <strong>
-                  {
-                    result.id
-                  }
-                </strong>
-
-                .{" "}
-              </>
-            ) : null}
-
-            Tested{" "}
-
-            {Number(
-              result.candleCount ||
-                0,
-            )}{" "}
-
-            candles with Strategy Engine 2.0.
-          </p>
-        </>
-      ) : null}
-
-      {result &&
-      isWalkForward ? (
-        <>
+            borderTop:
+              "1px solid rgba(148, 163, 184, 0.1)",
+          }}
+        >
           <div
-            className="panel-heading"
             style={{
-              marginTop:
-                "28px",
+              display:
+                "flex",
+
+              justifyContent:
+                "space-between",
+
+              alignItems:
+                "center",
+
+              gap:
+                "12px",
+
+              marginBottom:
+                "16px",
+
+              flexWrap:
+                "wrap",
             }}
           >
             <div>
               <span className="eyebrow">
-                OUT-OF-SAMPLE RESULTS
+                {isWalkForward
+                  ? "OUT-OF-SAMPLE PERFORMANCE"
+                  : "BACKTEST PERFORMANCE"}
               </span>
 
-              <h3>
-                Walk-Forward Performance
+              <h3
+                style={{
+                  margin:
+                    "5px 0 0",
+                }}
+              >
+                Results
               </h3>
             </div>
+
+            {result.id ? (
+              <small
+                style={{
+                  color:
+                    "#64748b",
+                }}
+              >
+                Saved ·{" "}
+                {result.id.slice(
+                  0,
+                  8,
+                )}
+              </small>
+            ) : null}
           </div>
 
-          <div className="backtest-summary">
+          <div
+            style={{
+              display:
+                "grid",
+
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(150px, 1fr))",
+
+              gap:
+                "12px",
+            }}
+          >
             <ResultCard
-              label="Ending equity"
+              label="Ending Equity"
               value={
                 formatMoney(
-                  result
-                    .endingEquity,
+                  result.endingEquity,
                 )
               }
-              className={
-                getClass(
-                  result
-                    .totalProfit,
+              tone={
+                getTone(
+                  result.totalProfit,
                 )
               }
             />
 
             <ResultCard
-              label="OOS profit"
+              label={
+                isWalkForward
+                  ? "OOS Profit"
+                  : "Total Profit"
+              }
               value={
                 formatMoney(
-                  result
-                    .totalProfit,
+                  result.totalProfit,
                 )
               }
-              className={
-                getClass(
-                  result
-                    .totalProfit,
+              tone={
+                getTone(
+                  result.totalProfit,
                 )
               }
             />
 
             <ResultCard
-              label="OOS return"
+              label={
+                isWalkForward
+                  ? "OOS Return"
+                  : "Total Return"
+              }
               value={
                 formatPercent(
-                  result
-                    .totalReturnPercent,
+                  result.totalReturnPercent,
                 )
               }
-              className={
-                getClass(
-                  result
-                    .totalReturnPercent,
+              tone={
+                getTone(
+                  result.totalReturnPercent,
                 )
               }
             />
 
             <ResultCard
-              label="Profit factor"
+              label="Win Rate"
+              value={
+                formatPercent(
+                  result.winRate,
+                  false,
+                )
+              }
+            />
+
+            <ResultCard
+              label="Profit Factor"
               value={
                 formatProfitFactor(
-                  result
-                    .profitFactor,
+                  result.profitFactor,
                 )
               }
             />
 
             <ResultCard
-              label="OOS expectancy"
-              value={
-                formatMoney(
-                  result
-                    .outOfSampleExpectancy,
-                )
-              }
-              className={
-                getClass(
-                  result
-                    .outOfSampleExpectancy,
-                )
-              }
-            />
-
-            <ResultCard
-              label="Win rate"
+              label="Max Drawdown"
               value={
                 formatPercent(
-                  result
-                    .winRate,
+                  result.maximumDrawdownPercent,
                   false,
                 )
               }
+              tone="negative"
             />
 
             <ResultCard
-              label="Max drawdown"
-              value={
-                formatPercent(
-                  result
-                    .maximumDrawdownPercent,
-                  false,
-                )
-              }
-              className="negative"
-            />
-
-            <ResultCard
-              label="Closed trades"
+              label="Closed Trades"
               value={
                 Number(
-                  result
-                    .closedTradeCount ||
+                  result.closedTradeCount ||
                     0,
                 )
-              }
-            />
-
-            <ResultCard
-              label="Windows"
-              value={
-                Number(
-                  result
-                    .windowCount ||
-                    0,
-                )
-              }
-            />
-
-            <ResultCard
-              label="Profitable windows"
-              value={`${Number(
-                result.profitableWindows ||
-                  0,
-              )} / ${Number(
-                result.windowCount ||
-                  0,
-              )}`}
-              className={
-                getClass(
-                  Number(
-                    result
-                      .profitableWindows,
-                  ) -
-                    Number(
-                      result
-                        .losingWindows,
-                    ),
-                )
-              }
-              small={
-                formatPercent(
-                  result
-                    .profitableWindowRate,
-                  false,
-                )
-              }
-            />
-
-            <ResultCard
-              label="Avg train return"
-              value={
-                formatPercent(
-                  result
-                    .averageTrainingReturnPercent,
-                )
-              }
-              className={
-                getClass(
-                  result
-                    .averageTrainingReturnPercent,
-                )
-              }
-            />
-
-            <ResultCard
-              label="Avg test return"
-              value={
-                formatPercent(
-                  result
-                    .averageTestingReturnPercent,
-                )
-              }
-              className={
-                getClass(
-                  result
-                    .averageTestingReturnPercent,
-                )
-              }
-            />
-
-            <ResultCard
-              label="Train → test degradation"
-              value={
-                formatPercent(
-                  result
-                    .averageReturnDegradationPercent,
-                  false,
-                )
-              }
-              className={
-                Number(
-                  result
-                    .averageReturnDegradationPercent,
-                ) >
-                0
-                  ? "negative"
-                  : "positive"
               }
             />
 
@@ -1551,279 +1871,400 @@ function BacktestPanel({
               label="Fees"
               value={
                 formatMoney(
-                  result
-                    .totalFees,
+                  result.totalFees,
                 )
               }
             />
-          </div>
 
-          <div
-            style={{
-              marginTop:
-                "28px",
-
-              overflowX:
-                "auto",
-            }}
-          >
-            <h3>
-              Test Windows
-            </h3>
-
-            <table
-              style={{
-                width:
-                  "100%",
-
-                borderCollapse:
-                  "collapse",
-
-                marginTop:
-                  "12px",
-              }}
-            >
-              <thead>
-                <tr>
-                  <th>
-                    Window
-                  </th>
-
-                  <th>
-                    Train Return
-                  </th>
-
-                  <th>
-                    Test Return
-                  </th>
-
-                  <th>
-                    Test P/L
-                  </th>
-
-                  <th>
-                    Trades
-                  </th>
-
-                  <th>
-                    Win Rate
-                  </th>
-
-                  <th>
-                    PF
-                  </th>
-
-                  <th>
-                    Score
-                  </th>
-
-                  <th>
-                    Confidence
-                  </th>
-
-                  <th>
-                    Stop
-                  </th>
-
-                  <th>
-                    Take
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {(result.windows ||
-                  []).map(
-                  (
-                    window,
-                  ) => (
-                    <tr
-                      key={
-                        window.index
-                      }
-                    >
-                      <td>
-                        {Number(
-                          window.index,
-                        ) +
-                          1}
-                      </td>
-
-                      <td
-                        className={
-                          getClass(
-                            window
-                              .training
-                              ?.totalReturnPercent,
-                          )
-                        }
-                      >
-                        {formatPercent(
-                          window
-                            .training
-                            ?.totalReturnPercent,
-                        )}
-                      </td>
-
-                      <td
-                        className={
-                          getClass(
-                            window
-                              .testing
-                              ?.totalReturnPercent,
-                          )
-                        }
-                      >
-                        {formatPercent(
-                          window
-                            .testing
-                            ?.totalReturnPercent,
-                        )}
-                      </td>
-
-                      <td
-                        className={
-                          getClass(
-                            window
-                              .testing
-                              ?.totalProfit,
-                          )
-                        }
-                      >
-                        {formatMoney(
-                          window
-                            .testing
-                            ?.totalProfit,
-                        )}
-                      </td>
-
-                      <td>
-                        {Number(
-                          window
-                            .testing
-                            ?.closedTradeCount ||
-                            0,
-                        )}
-                      </td>
-
-                      <td>
-                        {formatPercent(
-                          window
-                            .testing
-                            ?.winRate,
-                          false,
-                        )}
-                      </td>
-
-                      <td>
-                        {formatProfitFactor(
-                          window
-                            .testing
-                            ?.profitFactor,
-                        )}
-                      </td>
-
-                      <td>
-                        {window
-                          .selectedSettings
-                          ?.minimumScore ??
-                          "—"}
-                      </td>
-
-                      <td>
-                        {window
-                          .selectedSettings
-                          ?.minimumConfidence ??
-                          "—"}
-                      </td>
-
-                      <td>
-                        {window
-                          .selectedSettings
-                          ?.stopLossPercent ??
-                          "—"}
-                        %
-                      </td>
-
-                      <td>
-                        {window
-                          .selectedSettings
-                          ?.takeProfitPercent ??
-                          "—"}
-                        %
-                      </td>
-                    </tr>
-                  ),
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          <p className="backtest-description">
-            {result.id ? (
+            {isWalkForward ? (
               <>
-                Saved as walk-forward test{" "}
-
-                <strong>
-                  {
-                    result.id
+                <ResultCard
+                  label="OOS Expectancy"
+                  value={
+                    formatMoney(
+                      result.outOfSampleExpectancy,
+                    )
                   }
-                </strong>
+                  tone={
+                    getTone(
+                      result.outOfSampleExpectancy,
+                    )
+                  }
+                />
 
-                .{" "}
+                <ResultCard
+                  label="Windows"
+                  value={
+                    Number(
+                      result.windowCount ||
+                        0,
+                    )
+                  }
+                />
+
+                <ResultCard
+                  label="Profitable Windows"
+                  value={`${Number(
+                    result.profitableWindows ||
+                      0,
+                  )}/${Number(
+                    result.windowCount ||
+                      0,
+                  )}`}
+                  tone={
+                    Number(
+                      result.profitableWindows,
+                    ) >
+                    Number(
+                      result.losingWindows,
+                    )
+                      ? "positive"
+                      : "negative"
+                  }
+                  detail={
+                    formatPercent(
+                      result.profitableWindowRate,
+                      false,
+                    )
+                  }
+                />
+
+                <ResultCard
+                  label="Avg Train Return"
+                  value={
+                    formatPercent(
+                      result.averageTrainingReturnPercent,
+                    )
+                  }
+                  tone={
+                    getTone(
+                      result.averageTrainingReturnPercent,
+                    )
+                  }
+                />
+
+                <ResultCard
+                  label="Avg Test Return"
+                  value={
+                    formatPercent(
+                      result.averageTestingReturnPercent,
+                    )
+                  }
+                  tone={
+                    getTone(
+                      result.averageTestingReturnPercent,
+                    )
+                  }
+                />
+
+                <ResultCard
+                  label="Train → Test Gap"
+                  value={
+                    formatPercent(
+                      result.averageReturnDegradationPercent,
+                      false,
+                    )
+                  }
+                  tone={
+                    Number(
+                      result.averageReturnDegradationPercent,
+                    ) >
+                    0
+                      ? "negative"
+                      : "positive"
+                  }
+                />
               </>
             ) : null}
+          </div>
 
-            Tested{" "}
+          {/* WALK-FORWARD TABLE */}
 
-            {Number(
-              result.candleCount ||
-                0,
-            )}{" "}
-
-            historical candles across{" "}
-
-            {Number(
-              result.windowCount ||
-                0,
-            )}{" "}
-
-            rolling out-of-sample windows.
-          </p>
-
-          <details
-            style={{
-              marginTop:
-                "20px",
-            }}
-          >
-            <summary>
-              Raw Walk-Forward JSON
-            </summary>
-
-            <pre
+          {isWalkForward &&
+          Array.isArray(
+            result.windows,
+          ) &&
+          result.windows.length >
+            0 ? (
+            <div
               style={{
                 marginTop:
-                  "12px",
-
-                whiteSpace:
-                  "pre-wrap",
-
-                overflowX:
-                  "auto",
-
-                fontSize:
-                  "12px",
+                  "26px",
               }}
             >
-              {JSON.stringify(
-                result,
-                null,
-                2,
-              )}
-            </pre>
-          </details>
-        </>
+              <div
+                style={{
+                  marginBottom:
+                    "12px",
+                }}
+              >
+                <span className="eyebrow">
+                  WINDOW BREAKDOWN
+                </span>
+
+                <h3
+                  style={{
+                    margin:
+                      "5px 0 0",
+                  }}
+                >
+                  Out-of-Sample Windows
+                </h3>
+              </div>
+
+              <div
+                style={{
+                  overflowX:
+                    "auto",
+
+                  border:
+                    "1px solid rgba(148, 163, 184, 0.1)",
+
+                  borderRadius:
+                    "12px",
+                }}
+              >
+                <table
+                  style={{
+                    width:
+                      "100%",
+
+                    minWidth:
+                      "900px",
+
+                    borderCollapse:
+                      "collapse",
+                  }}
+                >
+                  <thead>
+                    <tr>
+                      {[
+                        "Window",
+                        "Train Return",
+                        "Test Return",
+                        "P/L",
+                        "Trades",
+                        "Win Rate",
+                        "PF",
+                        "Score",
+                        "Confidence",
+                        "Stop",
+                        "Take",
+                      ].map(
+                        (
+                          heading,
+                        ) => (
+                          <th
+                            key={
+                              heading
+                            }
+                            style={{
+                              padding:
+                                "11px",
+
+                              textAlign:
+                                "left",
+
+                              color:
+                                "#64748b",
+
+                              fontSize:
+                                "10px",
+
+                              letterSpacing:
+                                "0.07em",
+
+                              textTransform:
+                                "uppercase",
+
+                              background:
+                                "rgba(15, 23, 42, 0.5)",
+                            }}
+                          >
+                            {
+                              heading
+                            }
+                          </th>
+                        ),
+                      )}
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {result.windows.map(
+                      (
+                        window,
+                      ) => (
+                        <tr
+                          key={
+                            window.index
+                          }
+                          style={{
+                            borderTop:
+                              "1px solid rgba(148, 163, 184, 0.08)",
+                          }}
+                        >
+                          <td
+                            style={{
+                              padding:
+                                "11px",
+                            }}
+                          >
+                            {Number(
+                              window.index,
+                            ) +
+                              1}
+                          </td>
+
+                          <td>
+                            {formatPercent(
+                              window
+                                .training
+                                ?.totalReturnPercent,
+                            )}
+                          </td>
+
+                          <td>
+                            {formatPercent(
+                              window
+                                .testing
+                                ?.totalReturnPercent,
+                            )}
+                          </td>
+
+                          <td>
+                            {formatMoney(
+                              window
+                                .testing
+                                ?.totalProfit,
+                            )}
+                          </td>
+
+                          <td>
+                            {Number(
+                              window
+                                .testing
+                                ?.closedTradeCount ||
+                                0,
+                            )}
+                          </td>
+
+                          <td>
+                            {formatPercent(
+                              window
+                                .testing
+                                ?.winRate,
+                              false,
+                            )}
+                          </td>
+
+                          <td>
+                            {formatProfitFactor(
+                              window
+                                .testing
+                                ?.profitFactor,
+                            )}
+                          </td>
+
+                          <td>
+                            {window
+                              .selectedSettings
+                              ?.minimumScore ??
+                              "—"}
+                          </td>
+
+                          <td>
+                            {window
+                              .selectedSettings
+                              ?.minimumConfidence ??
+                              "—"}
+                          </td>
+
+                          <td>
+                            {window
+                              .selectedSettings
+                              ?.stopLossPercent ??
+                              "—"}
+                            %
+                          </td>
+
+                          <td>
+                            {window
+                              .selectedSettings
+                              ?.takeProfitPercent ??
+                              "—"}
+                            %
+                          </td>
+                        </tr>
+                      ),
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
+
+          {isWalkForward ? (
+            <details
+              style={{
+                marginTop:
+                  "20px",
+              }}
+            >
+              <summary
+                style={{
+                  cursor:
+                    "pointer",
+
+                  color:
+                    "#94a3b8",
+
+                  fontSize:
+                    "12px",
+                }}
+              >
+                View raw walk-forward JSON
+              </summary>
+
+              <pre
+                style={{
+                  maxHeight:
+                    "450px",
+
+                  overflow:
+                    "auto",
+
+                  marginTop:
+                    "12px",
+
+                  padding:
+                    "14px",
+
+                  borderRadius:
+                    "10px",
+
+                  background:
+                    "rgba(2, 6, 23, 0.65)",
+
+                  color:
+                    "#94a3b8",
+
+                  fontSize:
+                    "11px",
+
+                  whiteSpace:
+                    "pre-wrap",
+                }}
+              >
+                {JSON.stringify(
+                  result,
+                  null,
+                  2,
+                )}
+              </pre>
+            </details>
+          ) : null}
+        </div>
       ) : null}
     </section>
   );
