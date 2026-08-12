@@ -21,11 +21,17 @@ export function createPerformanceRouter({
             .getSummary();
 
         response.json({
-          success: true,
+          success:
+            true,
+
           summary,
         });
-      } catch (error) {
-        next(error);
+      } catch (
+        error
+      ) {
+        next(
+          error,
+        );
       }
     },
   );
@@ -46,11 +52,17 @@ export function createPerformanceRouter({
             );
 
         response.json({
-          success: true,
+          success:
+            true,
+
           history,
         });
-      } catch (error) {
-        next(error);
+      } catch (
+        error
+      ) {
+        next(
+          error,
+        );
       }
     },
   );
@@ -71,11 +83,17 @@ export function createPerformanceRouter({
             );
 
         response.json({
-          success: true,
+          success:
+            true,
+
           trades,
         });
-      } catch (error) {
-        next(error);
+      } catch (
+        error
+      ) {
+        next(
+          error,
+        );
       }
     },
   );
@@ -96,11 +114,62 @@ export function createPerformanceRouter({
             );
 
         response.json({
-          success: true,
+          success:
+            true,
+
           snapshot,
         });
-      } catch (error) {
-        next(error);
+      } catch (
+        error
+      ) {
+        next(
+          error,
+        );
+      }
+    },
+  );
+
+  /*
+   * =====================================================
+   * RESET EQUITY HISTORY
+   * =====================================================
+   *
+   * Clears only persisted equity snapshots.
+   *
+   * This does NOT reset:
+   *
+   * - paper wallet cash
+   * - positions
+   * - trades
+   * - realized profit
+   *
+   * It is intended for removing corrupted
+   * historical equity data.
+   */
+  router.post(
+    "/equity/reset",
+    async (
+      request,
+      response,
+      next,
+    ) => {
+      try {
+        const result =
+          performanceService
+            .clearEquityHistory();
+
+        response.json({
+          success:
+            true,
+
+          result,
+        });
+      } catch (
+        error
+      ) {
+        next(
+          error,
+        );
       }
     },
   );
@@ -130,8 +199,12 @@ export function createPerformanceRouter({
         response.send(
           csv,
         );
-      } catch (error) {
-        next(error);
+      } catch (
+        error
+      ) {
+        next(
+          error,
+        );
       }
     },
   );
