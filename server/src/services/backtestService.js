@@ -477,6 +477,105 @@ export async function fetchHistoricalCandles({
     );
 }
 
+/*
+ * =========================================================
+ * WALK-FORWARD SIGNAL CACHE
+ * =========================================================
+ *
+ * Indicator and signal calculations are the expensive part
+ * of a backtest.
+ *
+ * Walk-forward optimization previously recalculated the
+ * exact same indicators/signals once for every parameter
+ * candidate, even though minimumScore, minimumConfidence,
+ * stop-loss and take-profit settings do not change the
+ * underlying indicator values or signal-engine output.
+ *
+ * Build them once for a candle window and reuse them across
+ * every candidate simulation.
+ *
+ * This preserves the strategy logic while dramatically
+ * reducing CPU work.
+ */
+function buildSignalCache({
+  candles,
+  minimumHistory,
+}) {
+  const cache =
+    new Array(
+      candles.length,
+    );
+
+  for (
+    let index =
+      minimumHistory;
+
+    index <
+    candles.length;
+
+    index +=
+      1
+  ) {
+    const history =
+      candles.slice(
+        0,
+        index +
+          1,
+      );
+
+    const candle =
+      history[
+        history.length -
+          1
+      ];
+
+    const price =
+      Number(
+        candle?.close,
+      );
+
+    if (
+      !Number.isFinite(
+        price,
+      ) ||
+      price <=
+        0
+    ) {
+      cache[index] = {
+        candle,
+        price,
+        signal:
+          null,
+      };
+
+      continue;
+    }
+
+    const indicators =
+      calculateAllIndicators(
+        history,
+      );
+
+    const signal =
+      calculateTradingSignal({
+        price,
+
+        candles:
+          history,
+
+        indicators,
+      });
+
+    cache[index] = {
+      candle,
+      price,
+      signal,
+    };
+  }
+
+  return cache;
+}
+
 export function runStrategyBacktest({
   candles,
   symbol,
@@ -490,6 +589,7 @@ export function runStrategyBacktest({
   takeProfitPercent = 4,
   minimumHistory = 210,
   closeOpenPositionAtEnd = false,
+  signalCache = null,
 }) {
   if (
     !Array.isArray(
@@ -537,48 +637,90 @@ export function runStrategyBacktest({
     index +=
       1
   ) {
-    const history =
-      candles.slice(
-        0,
-        index +
-          1,
-      );
+    /*
+     * Walk-forward optimization can provide a
+     * precomputed signal cache.
+     *
+     * Standard backtests still calculate signals
+     * exactly as before when no cache is supplied.
+     */
+    let candle;
+    let price;
+    let signal;
 
-    const candle =
-      history[
-        history.length -
-          1
-      ];
+    const cached =
+      Array.isArray(
+        signalCache,
+      )
+        ? signalCache[
+            index
+          ]
+        : null;
 
-    const price =
-      Number(
-        candle.close,
-      );
+    if (
+      cached
+    ) {
+      candle =
+        cached.candle;
+
+      price =
+        cached.price;
+
+      signal =
+        cached.signal;
+    } else {
+      const history =
+        candles.slice(
+          0,
+          index +
+            1,
+        );
+
+      candle =
+        history[
+          history.length -
+            1
+        ];
+
+      price =
+        Number(
+          candle?.close,
+        );
+
+      if (
+        Number.isFinite(
+          price,
+        ) &&
+        price >
+          0
+      ) {
+        const indicators =
+          calculateAllIndicators(
+            history,
+          );
+
+        signal =
+          calculateTradingSignal({
+            price,
+
+            candles:
+              history,
+
+            indicators,
+          });
+      }
+    }
 
     if (
       !Number.isFinite(
         price,
       ) ||
       price <=
-        0
+        0 ||
+      !signal
     ) {
       continue;
     }
-
-    const indicators =
-      calculateAllIndicators(
-        history,
-      );
-
-    const signal =
-      calculateTradingSignal({
-        price,
-
-        candles:
-          history,
-
-        indicators,
-      });
 
     if (position) {
       const returnPercent =
@@ -1065,14 +1207,12 @@ export function runStrategyBacktest({
       };
     }
   }
-
-  const openPositionValue =
+    const openPositionValue =
     position &&
     Number.isFinite(
       finalPrice,
     )
-      ? position
-          .quantity *
+      ? position.quantity *
         finalPrice
       : 0;
 
@@ -1116,10 +1256,8 @@ export function runStrategyBacktest({
     closedTrades.length >
     0
       ? (
-          winningTrades
-            .length /
-          closedTrades
-            .length
+          winningTrades.length /
+          closedTrades.length
         ) *
         100
       : 0;
@@ -1192,12 +1330,10 @@ export function runStrategyBacktest({
       orders.length,
 
     wins:
-      winningTrades
-        .length,
+      winningTrades.length,
 
     losses:
-      losingTrades
-        .length,
+      losingTrades.length,
 
     winRate,
 
@@ -1226,12 +1362,10 @@ export function runStrategyBacktest({
         : 0,
 
     maximumDrawdownAmount:
-      maximumDrawdown
-        .amount,
+      maximumDrawdown.amount,
 
     maximumDrawdownPercent:
-      maximumDrawdown
-        .percent,
+      maximumDrawdown.percent,
 
     openPosition:
       position,
@@ -1287,9 +1421,7 @@ export async function runAndSaveBacktest(
           5 ===
           0 ||
         index ===
-          result
-            .equityCurve
-            .length -
+          result.equityCurve.length -
             1,
     );
 
@@ -1360,13 +1492,11 @@ export async function runAndSaveBacktest(
 
       result.totalProfit,
 
-      result
-        .totalReturnPercent,
+      result.totalReturnPercent,
 
       result.totalFees,
 
-      result
-        .closedTradeCount,
+      result.closedTradeCount,
 
       result.orderCount,
 
@@ -1384,11 +1514,9 @@ export async function runAndSaveBacktest(
 
       result.averageTrade,
 
-      result
-        .maximumDrawdownAmount,
+      result.maximumDrawdownAmount,
 
-      result
-        .maximumDrawdownPercent,
+      result.maximumDrawdownPercent,
 
       JSON.stringify(
         result.settings,
@@ -1484,70 +1612,27 @@ function normalizeParameterGrid({
   takeProfitPercent,
   parameterGrid,
 }) {
-  const configuredGrid =
-    parameterGrid &&
-    typeof parameterGrid ===
-      "object"
-      ? parameterGrid
-      : {};
-
-  const scoreBase =
-    Math.abs(
-      Number(
-        minimumScore,
-      ) ||
-        60,
-    );
-
-  const confidenceBase =
-    Math.abs(
-      Number(
-        minimumConfidence,
-      ) ||
-        60,
-    );
-
-  const stopBase =
-    Math.max(
-      Number(
-        stopLossPercent,
-      ) ||
-        2,
-      0.1,
-    );
-
-  const takeBase =
-    Math.max(
-      Number(
-        takeProfitPercent,
-      ) ||
-        4,
-      0.1,
-    );
-
   /*
-   * Keep the default grid intentionally small.
+   * Keep the default optimization grid
+   * deliberately compact.
    *
-   * The signal calculation itself is relatively
-   * expensive, and walk-forward testing repeats
-   * the training backtest for every candidate.
-   *
-   * Callers can supply their own parameterGrid
-   * when they want a wider optimization search.
+   * The signal cache removes the most
+   * expensive repeated indicator work,
+   * but every candidate still performs
+   * a complete portfolio simulation.
    */
   const minimumScores =
     uniqueNumbers(
       Array.isArray(
-        configuredGrid.minimumScore,
+        parameterGrid
+          ?.minimumScore,
       )
-        ? configuredGrid.minimumScore
+        ? parameterGrid.minimumScore
         : [
-            scoreBase -
-              10,
-
-            scoreBase,
-
-            scoreBase +
+            minimumScore,
+            Number(
+              minimumScore,
+            ) +
               10,
           ],
       {
@@ -1565,16 +1650,15 @@ function normalizeParameterGrid({
   const minimumConfidences =
     uniqueNumbers(
       Array.isArray(
-        configuredGrid.minimumConfidence,
+        parameterGrid
+          ?.minimumConfidence,
       )
-        ? configuredGrid.minimumConfidence
+        ? parameterGrid.minimumConfidence
         : [
-            confidenceBase -
-              10,
-
-            confidenceBase,
-
-            confidenceBase +
+            minimumConfidence,
+            Number(
+              minimumConfidence,
+            ) +
               10,
           ],
       {
@@ -1592,21 +1676,32 @@ function normalizeParameterGrid({
   const stopLossPercents =
     uniqueNumbers(
       Array.isArray(
-        configuredGrid.stopLossPercent,
+        parameterGrid
+          ?.stopLossPercent,
       )
-        ? configuredGrid.stopLossPercent
+        ? parameterGrid.stopLossPercent
         : [
-            stopBase,
+            Math.max(
+              Number(
+                stopLossPercent,
+              ) -
+                0.5,
+              0.1,
+            ),
 
-            stopBase *
-              1.25,
+            stopLossPercent,
+
+            Number(
+              stopLossPercent,
+            ) +
+              0.5,
           ],
       {
         minimum:
           0.1,
 
         maximum:
-          50,
+          100,
 
         decimals:
           4,
@@ -1616,21 +1711,32 @@ function normalizeParameterGrid({
   const takeProfitPercents =
     uniqueNumbers(
       Array.isArray(
-        configuredGrid.takeProfitPercent,
+        parameterGrid
+          ?.takeProfitPercent,
       )
-        ? configuredGrid.takeProfitPercent
+        ? parameterGrid.takeProfitPercent
         : [
-            takeBase,
+            Math.max(
+              Number(
+                takeProfitPercent,
+              ) -
+                1,
+              0.1,
+            ),
 
-            takeBase *
-              1.25,
+            takeProfitPercent,
+
+            Number(
+              takeProfitPercent,
+            ) +
+              1,
           ],
       {
         minimum:
           0.1,
 
         maximum:
-          100,
+          1000,
 
         decimals:
           4,
@@ -1760,6 +1866,25 @@ function scoreTrainingResult(
   );
 }
 
+/*
+ * =========================================================
+ * TRAINING WINDOW OPTIMIZATION
+ * =========================================================
+ *
+ * IMPORTANT PERFORMANCE CHANGE:
+ *
+ * The signal stream is calculated ONCE for
+ * this training window.
+ *
+ * Every parameter candidate then reuses the
+ * exact same signal stream.
+ *
+ * Previously each candidate independently
+ * recalculated indicators and signals for
+ * every candle. With the default 36-candidate
+ * grid that repeated the expensive work
+ * dozens of times.
+ */
 export function optimizeTrainingWindow({
   candles,
   symbol,
@@ -1781,6 +1906,13 @@ export function optimizeTrainingWindow({
       stopLossPercent,
       takeProfitPercent,
       parameterGrid,
+    });
+
+  const trainingSignalCache =
+    buildSignalCache({
+      candles,
+
+      minimumHistory,
     });
 
   let best =
@@ -1807,6 +1939,13 @@ export function optimizeTrainingWindow({
 
         closeOpenPositionAtEnd:
           true,
+
+        /*
+         * This is the optimization:
+         * reuse the precomputed signal stream.
+         */
+        signalCache:
+          trainingSignalCache,
       });
 
     const optimizationScore =
@@ -1868,9 +2007,11 @@ export function optimizeTrainingWindow({
 
   /*
    * Every candidate can theoretically produce
-   * zero closed trades. In that case choose the
-   * caller's base settings rather than failing
-   * the entire walk-forward test.
+   * zero closed trades.
+   *
+   * Fall back to the caller's original
+   * settings rather than failing the entire
+   * walk-forward test.
    */
   if (
     !best ||
@@ -1928,6 +2069,13 @@ export function optimizeTrainingWindow({
 
         closeOpenPositionAtEnd:
           true,
+
+        /*
+         * Reuse the same cache for the
+         * fallback simulation too.
+         */
+        signalCache:
+          trainingSignalCache,
       });
 
     best = {
@@ -2124,11 +2272,10 @@ export function runWalkForwardTest({
      * The test run receives warm-up candles
      * from the END of the training period.
      *
-     * runStrategyBacktest() starts making
-     * decisions only after minimumHistory,
-     * so these warm-up candles are used for
-     * indicators but NEVER counted as
-     * out-of-sample trading performance.
+     * These warm-up candles are used only for
+     * indicator calculation.
+     *
+     * Trading decisions begin at testingStart.
      */
     const warmupStart =
       Math.max(
@@ -2154,6 +2301,14 @@ export function runWalkForwardTest({
       continue;
     }
 
+    /*
+     * Optimize parameters using ONLY the
+     * training window.
+     *
+     * optimizeTrainingWindow() now builds one
+     * signal cache and reuses it across all
+     * candidate parameter simulations.
+     */
     const optimization =
       optimizeTrainingWindow({
         candles:
@@ -2179,6 +2334,22 @@ export function runWalkForwardTest({
         parameterGrid,
       });
 
+    /*
+     * Build the out-of-sample signal stream
+     * exactly once.
+     *
+     * The selected training parameters are
+     * then applied to this unseen test data.
+     */
+    const testingSignalCache =
+      buildSignalCache({
+        candles:
+          testWithWarmup,
+
+        minimumHistory:
+          testMinimumHistory,
+      });
+
     const testResult =
       runStrategyBacktest({
         candles:
@@ -2201,6 +2372,9 @@ export function runWalkForwardTest({
 
         closeOpenPositionAtEnd:
           true,
+
+        signalCache:
+          testingSignalCache,
       });
 
     const trainingResult =
@@ -2649,6 +2823,9 @@ export function runWalkForwardTest({
 
       positionHandling:
         "FORCE_FLAT_AT_WINDOW_END",
+
+      signalCaching:
+        "ENABLED",
     },
 
     trainingWindow:
@@ -2774,9 +2951,8 @@ export async function runAndSaveWalkForwardTest(
       ...settings,
 
       /*
-       * A normal backtest defaults to 1000.
        * Walk-forward testing benefits from
-       * a longer sequence by default.
+       * more history than a normal backtest.
        */
       limit:
         Number(
@@ -2889,7 +3065,8 @@ export async function runAndSaveWalkForwardTest(
         )
       `,
     )
-    .run(
+
+        .run(
       id,
 
       result.symbol,
