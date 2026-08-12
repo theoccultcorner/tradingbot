@@ -8,33 +8,19 @@ import {
   serverUrl,
 } from "../config/server.js";
 
-function formatMoney(
-  value,
-) {
-  const number =
-    Number(
-      value,
-    );
+function formatMoney(value) {
+  const number = Number(value);
 
-  if (
-    !Number.isFinite(
-      number,
-    )
-  ) {
+  if (!Number.isFinite(number)) {
     return "—";
   }
 
   return number.toLocaleString(
     "en-US",
     {
-      style:
-        "currency",
-
-      currency:
-        "USD",
-
-      maximumFractionDigits:
-        2,
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 2,
     },
   );
 }
@@ -46,29 +32,18 @@ function formatPercent(
     decimals = 2,
   } = {},
 ) {
-  const number =
-    Number(
-      value,
-    );
+  const number = Number(value);
 
-  if (
-    !Number.isFinite(
-      number,
-    )
-  ) {
+  if (!Number.isFinite(number)) {
     return "—";
   }
 
   const prefix =
-    signed &&
-    number >
-      0
+    signed && number > 0
       ? "+"
       : "";
 
-  return `${prefix}${number.toFixed(
-    decimals,
-  )}%`;
+  return `${prefix}${number.toFixed(decimals)}%`;
 }
 
 function formatNumber(
@@ -76,39 +51,23 @@ function formatNumber(
   decimals = 2,
 ) {
   if (
-    value ===
-    null ||
-    value ===
-      undefined
+    value === null ||
+    value === undefined
   ) {
     return "—";
   }
 
-  const number =
-    Number(
-      value,
-    );
+  const number = Number(value);
 
-  if (
-    !Number.isFinite(
-      number,
-    )
-  ) {
+  if (!Number.isFinite(number)) {
     return "—";
   }
 
-  return number.toFixed(
-    decimals,
-  );
+  return number.toFixed(decimals);
 }
 
-function formatProfitFactor(
-  value,
-) {
-  if (
-    value ===
-    null
-  ) {
+function formatProfitFactor(value) {
+  if (value === null) {
     return "∞";
   }
 
@@ -118,12 +77,9 @@ function formatProfitFactor(
   );
 }
 
-function formatStatus(
-  value,
-) {
+function formatStatus(value) {
   return String(
-    value ||
-      "UNKNOWN",
+    value || "UNKNOWN",
   )
     .replaceAll(
       "_",
@@ -132,44 +88,27 @@ function formatStatus(
     .toLowerCase()
     .replace(
       /\b\w/g,
-      (
-        character,
-      ) =>
+      (character) =>
         character.toUpperCase(),
     );
 }
 
-function toneFromNumber(
-  value,
-) {
-  const number =
-    Number(
-      value,
-    );
+function toneFromNumber(value) {
+  const number = Number(value);
 
-  if (
-    number >
-    0
-  ) {
+  if (number > 0) {
     return "positive";
   }
 
-  if (
-    number <
-    0
-  ) {
+  if (number < 0) {
     return "negative";
   }
 
   return "neutral";
 }
 
-function statusTone(
-  status,
-) {
-  switch (
-    status
-  ) {
+function statusTone(status) {
+  switch (status) {
     case "GOOD_MATCH":
       return "positive";
 
@@ -194,10 +133,8 @@ function statusTone(
 function MetricCard({
   label,
   value,
-  detail =
-    "",
-  tone =
-    "neutral",
+  detail = "",
+  tone = "neutral",
 }) {
   return (
     <article className="comparison-metric-card">
@@ -226,12 +163,9 @@ function ComparisonRow({
   standard,
   walkForward,
   formatter = formatNumber,
-  paperTone =
-    "neutral",
-  standardTone =
-    "neutral",
-  walkForwardTone =
-    "neutral",
+  paperTone = "neutral",
+  standardTone = "neutral",
+  walkForwardTone = "neutral",
 }) {
   return (
     <div className="comparison-table-row">
@@ -242,87 +176,59 @@ function ComparisonRow({
       <div
         className={`comparison-table-value ${paperTone}`}
       >
-        {formatter(
-          paper,
-        )}
+        {formatter(paper)}
       </div>
 
       <div
         className={`comparison-table-value ${standardTone}`}
       >
-        {standard ===
-          undefined ||
-        standard ===
-          null
+        {standard === undefined ||
+        standard === null
           ? "—"
-          : formatter(
-              standard,
-            )}
+          : formatter(standard)}
       </div>
 
       <div
         className={`comparison-table-value ${walkForwardTone}`}
       >
-        {walkForward ===
-          undefined ||
-        walkForward ===
-          null
+        {walkForward === undefined ||
+        walkForward === null
           ? "—"
-          : formatter(
-              walkForward,
-            )}
+          : formatter(walkForward)}
       </div>
     </div>
   );
 }
 
 function PaperBacktestComparisonPanel({
-  symbol =
-    "SOLUSD",
-
-  timeframe =
-    "1m",
+  symbol = "SOLUSD",
+  timeframe = "1m",
 }) {
   const [
     report,
     setReport,
-  ] =
-    useState(
-      null,
-    );
+  ] = useState(null);
 
   const [
     loading,
     setLoading,
-  ] =
-    useState(
-      true,
-    );
+  ] = useState(true);
 
   const [
     error,
     setError,
-  ] =
-    useState(
-      "",
-    );
+  ] = useState("");
 
   const loadReport =
     useCallback(
       async () => {
-        setLoading(
-          true,
-        );
-
-        setError(
-          "",
-        );
+        setLoading(true);
+        setError("");
 
         try {
           const query =
             new URLSearchParams({
               symbol,
-
               timeframe,
             });
 
@@ -332,11 +238,8 @@ function PaperBacktestComparisonPanel({
                 `/api/comparison?${query}`,
               ),
               {
-                method:
-                  "GET",
-
-                cache:
-                  "no-store",
+                method: "GET",
+                cache: "no-store",
 
                 headers: {
                   Accept:
@@ -348,25 +251,19 @@ function PaperBacktestComparisonPanel({
           const text =
             await response.text();
 
-          let data =
-            {};
+          let data = {};
 
           try {
-            data =
-              text
-                ? JSON.parse(
-                    text,
-                  )
-                : {};
+            data = text
+              ? JSON.parse(text)
+              : {};
           } catch {
             throw new Error(
               "The comparison server returned invalid JSON.",
             );
           }
 
-          if (
-            !response.ok
-          ) {
+          if (!response.ok) {
             throw new Error(
               data.message ||
                 `Comparison request failed with status ${response.status}.`,
@@ -374,24 +271,17 @@ function PaperBacktestComparisonPanel({
           }
 
           setReport(
-            data.report ||
-              null,
+            data.report || null,
           );
-        } catch (
-          requestError
-        ) {
-          setReport(
-            null,
-          );
+        } catch (requestError) {
+          setReport(null);
 
           setError(
             requestError.message ||
               "Could not load paper-vs-backtest comparison.",
           );
         } finally {
-          setLoading(
-            false,
-          );
+          setLoading(false);
         }
       },
       [
@@ -410,34 +300,27 @@ function PaperBacktestComparisonPanel({
   );
 
   const standard =
-    report
-      ?.standard;
+    report?.standard;
 
   const walkForward =
-    report
-      ?.walkForward;
+    report?.walkForward;
 
   const paper =
-    standard
-      ?.paper ||
-    walkForward
-      ?.paper ||
+    standard?.paper ||
+    walkForward?.paper ||
     null;
 
   const standardResult =
-    standard
-      ?.backtest ||
+    standard?.backtest ||
     null;
 
   const walkForwardResult =
-    walkForward
-      ?.walkForward ||
+    walkForward?.walkForward ||
     null;
 
   const combinedTone =
     statusTone(
-      report
-        ?.combinedStatus,
+      report?.combinedStatus,
     );
 
   const sampleProgress =
@@ -452,8 +335,7 @@ function PaperBacktestComparisonPanel({
                 ?.minimumRecommendedClosedTrades ||
                 20,
             )
-          ) *
-            100,
+          ) * 100,
           100,
         )
       : 0;
@@ -464,7 +346,7 @@ function PaperBacktestComparisonPanel({
         <div className="panel-header comparison-hero-header">
           <div>
             <p className="panel-eyebrow">
-              ROADMAP STEP 9
+              STRATEGY VALIDATION
             </p>
 
             <h2>
@@ -507,16 +389,14 @@ function PaperBacktestComparisonPanel({
                 label="Overall Status"
                 value={
                   formatStatus(
-                    report
-                      .combinedStatus,
+                    report.combinedStatus,
                   )
                 }
                 tone={
                   combinedTone
                 }
                 detail={
-                  report
-                    .statisticallyMeaningful
+                  report.statisticallyMeaningful
                     ? "Enough closed trades for evaluation"
                     : "Still gathering enough trades"
                 }
@@ -525,13 +405,11 @@ function PaperBacktestComparisonPanel({
               <MetricCard
                 label="Similarity Score"
                 value={
-                  report
-                    .combinedMatchScore ===
+                  report.combinedMatchScore ===
                   null
                     ? "—"
                     : `${formatNumber(
-                        report
-                          .combinedMatchScore,
+                        report.combinedMatchScore,
                         2,
                       )}%`
                 }
@@ -544,19 +422,16 @@ function PaperBacktestComparisonPanel({
               <MetricCard
                 label="Paper Trades"
                 value={
-                  paper
-                    ?.closedTrades ??
+                  paper?.closedTrades ??
                   0
                 }
                 tone={
-                  paper
-                    ?.sampleAdequate
+                  paper?.sampleAdequate
                     ? "positive"
                     : "warning"
                 }
                 detail={`Target: ${
-                  report
-                    .minimumRecommendedClosedTrades ||
+                  report.minimumRecommendedClosedTrades ||
                   20
                 } closed trades`}
               />
@@ -564,16 +439,14 @@ function PaperBacktestComparisonPanel({
               <MetricCard
                 label="Available Comparisons"
                 value={
-                  report
-                    .availableComparisonCount ??
+                  report.availableComparisonCount ??
                   0
                 }
                 detail="Standard + walk-forward"
               />
             </div>
 
-            {!report
-              .statisticallyMeaningful ? (
+            {!report.statisticallyMeaningful ? (
               <div className="comparison-warning-banner">
                 <div>
                   <strong>
@@ -582,14 +455,11 @@ function PaperBacktestComparisonPanel({
 
                   <span>
                     You currently have{" "}
-                    {paper
-                      ?.closedTrades ??
-                      0}{" "}
-                    closed paper trades. Step 9 recommends at least{" "}
-                    {report
-                      .minimumRecommendedClosedTrades ||
+                    {paper?.closedTrades ?? 0}{" "}
+                    closed paper trades. At least{" "}
+                    {report.minimumRecommendedClosedTrades ||
                       20}{" "}
-                    closed trades before treating the comparison as statistically meaningful.
+                    closed trades are recommended before treating the comparison as statistically meaningful.
                   </span>
                 </div>
 
@@ -663,8 +533,7 @@ function PaperBacktestComparisonPanel({
                 <ComparisonRow
                   label="Return"
                   paper={
-                    paper
-                      ?.returnPercent
+                    paper?.returnPercent
                   }
                   standard={
                     standardResult
@@ -680,15 +549,13 @@ function PaperBacktestComparisonPanel({
                     formatPercent(
                       value,
                       {
-                        signed:
-                          true,
+                        signed: true,
                       },
                     )
                   }
                   paperTone={
                     toneFromNumber(
-                      paper
-                        ?.returnPercent,
+                      paper?.returnPercent,
                     )
                   }
                   standardTone={
@@ -708,8 +575,7 @@ function PaperBacktestComparisonPanel({
                 <ComparisonRow
                   label="Profit"
                   paper={
-                    paper
-                      ?.profit
+                    paper?.profit
                   }
                   standard={
                     standardResult
@@ -724,8 +590,7 @@ function PaperBacktestComparisonPanel({
                   }
                   paperTone={
                     toneFromNumber(
-                      paper
-                        ?.profit,
+                      paper?.profit,
                     )
                   }
                   standardTone={
@@ -745,8 +610,7 @@ function PaperBacktestComparisonPanel({
                 <ComparisonRow
                   label="Win Rate"
                   paper={
-                    paper
-                      ?.winRate
+                    paper?.winRate
                   }
                   standard={
                     standardResult
@@ -768,8 +632,7 @@ function PaperBacktestComparisonPanel({
                 <ComparisonRow
                   label="Profit Factor"
                   paper={
-                    paper
-                      ?.profitFactor
+                    paper?.profitFactor
                   }
                   standard={
                     standardResult
@@ -787,8 +650,7 @@ function PaperBacktestComparisonPanel({
                 <ComparisonRow
                   label="Expectancy / Trade"
                   paper={
-                    paper
-                      ?.expectancy
+                    paper?.expectancy
                   }
                   standard={
                     standardResult
@@ -803,8 +665,7 @@ function PaperBacktestComparisonPanel({
                   }
                   paperTone={
                     toneFromNumber(
-                      paper
-                        ?.expectancy,
+                      paper?.expectancy,
                     )
                   }
                   standardTone={
@@ -847,8 +708,7 @@ function PaperBacktestComparisonPanel({
                 <ComparisonRow
                   label="Closed Trades"
                   paper={
-                    paper
-                      ?.closedTrades
+                    paper?.closedTrades
                   }
                   standard={
                     standardResult
@@ -862,8 +722,7 @@ function PaperBacktestComparisonPanel({
                     value,
                   ) =>
                     Number(
-                      value ||
-                        0,
+                      value || 0,
                     ).toLocaleString()
                   }
                 />
@@ -904,19 +763,16 @@ function PaperBacktestComparisonPanel({
 
                   <span
                     className={`comparison-status-pill ${statusTone(
-                      standard
-                        ?.status,
+                      standard?.status,
                     )}`}
                   >
                     {formatStatus(
-                      standard
-                        ?.status,
+                      standard?.status,
                     )}
                   </span>
                 </div>
 
-                {standard
-                  ?.success ? (
+                {standard?.success ? (
                   <>
                     <div className="comparison-score-line">
                       <span>
@@ -925,8 +781,7 @@ function PaperBacktestComparisonPanel({
 
                       <strong>
                         {formatNumber(
-                          standard
-                            .matchScore,
+                          standard.matchScore,
                           2,
                         )}
                         %
@@ -1010,19 +865,16 @@ function PaperBacktestComparisonPanel({
 
                   <span
                     className={`comparison-status-pill ${statusTone(
-                      walkForward
-                        ?.status,
+                      walkForward?.status,
                     )}`}
                   >
                     {formatStatus(
-                      walkForward
-                        ?.status,
+                      walkForward?.status,
                     )}
                   </span>
                 </div>
 
-                {walkForward
-                  ?.success ? (
+                {walkForward?.success ? (
                   <>
                     <div className="comparison-score-line">
                       <span>
@@ -1031,8 +883,7 @@ function PaperBacktestComparisonPanel({
 
                       <strong>
                         {formatNumber(
-                          walkForward
-                            .matchScore,
+                          walkForward.matchScore,
                           2,
                         )}
                         %
@@ -1099,12 +950,9 @@ function PaperBacktestComparisonPanel({
             </div>
 
             {Array.isArray(
-              report
-                .warnings,
+              report.warnings,
             ) &&
-            report
-              .warnings
-              .length >
+            report.warnings.length >
               0 ? (
               <section className="panel comparison-notes">
                 <div className="panel-header">
@@ -1120,22 +968,18 @@ function PaperBacktestComparisonPanel({
                 </div>
 
                 <ul>
-                  {report
-                    .warnings
-                    .map(
-                      (
-                        warning,
-                        index,
-                      ) => (
-                        <li
-                          key={`${warning}-${index}`}
-                        >
-                          {
-                            warning
-                          }
-                        </li>
-                      ),
-                    )}
+                  {report.warnings.map(
+                    (
+                      warning,
+                      index,
+                    ) => (
+                      <li
+                        key={`${warning}-${index}`}
+                      >
+                        {warning}
+                      </li>
+                    ),
+                  )}
                 </ul>
               </section>
             ) : null}
