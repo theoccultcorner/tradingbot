@@ -20,6 +20,9 @@ import {
 const LOCAL_SETTINGS_KEY =
   "serverTradingEngine";
 
+const AUTOMATIC_PRICE_SAFETY_FAILURE_LIMIT =
+  3;
+
 const DEFAULT_SETTINGS = {
   enabled: false,
   emergencyStop: false,
@@ -730,6 +733,16 @@ export class ServerTradingEngineService {
     this.highWaterMarks =
       {};
 
+    this.killSwitchState = {
+      active: false,
+      type: null,
+      reason: null,
+      triggeredAt: null,
+    };
+
+    this.priceSafetyFailureCount =
+      0;
+
     this.processing =
       false;
 
@@ -761,6 +774,16 @@ export class ServerTradingEngineService {
 
             lastRiskEvent:
               null,
+
+            killSwitchState: {
+              active: false,
+              type: null,
+              reason: null,
+              triggeredAt: null,
+            },
+
+            priceSafetyFailureCount:
+              0,
           },
         },
       );
@@ -814,6 +837,57 @@ export class ServerTradingEngineService {
         .lastRiskEvent ||
       null;
 
+    this.killSwitchState =
+      runtime
+          .killSwitchState &&
+        typeof runtime
+          .killSwitchState ===
+          "object"
+        ? {
+            active:
+              Boolean(
+                runtime
+                  .killSwitchState
+                  .active,
+              ),
+
+            type:
+              runtime
+                .killSwitchState
+                .type ||
+              null,
+
+            reason:
+              runtime
+                .killSwitchState
+                .reason ||
+              null,
+
+            triggeredAt:
+              Number(
+                runtime
+                  .killSwitchState
+                  .triggeredAt,
+              ) ||
+              null,
+          }
+        : {
+            active: false,
+            type: null,
+            reason: null,
+            triggeredAt: null,
+          };
+
+    this.priceSafetyFailureCount =
+      Math.max(
+        Number(
+          runtime
+            .priceSafetyFailureCount,
+        ) ||
+          0,
+        0,
+      );
+
     this.initialized =
       true;
 
@@ -856,6 +930,14 @@ export class ServerTradingEngineService {
       highWaterMarks: {
         ...this.highWaterMarks,
       },
+
+      killSwitchState: {
+        ...this.killSwitchState,
+      },
+
+      priceSafetyFailureCount:
+        this
+          .priceSafetyFailureCount,
     };
   }
 
@@ -887,6 +969,15 @@ export class ServerTradingEngineService {
           lastRiskEvent:
             this
               .lastRiskEvent,
+
+          killSwitchState: {
+            ...this
+              .killSwitchState,
+          },
+
+          priceSafetyFailureCount:
+            this
+              .priceSafetyFailureCount,
         },
       },
     );
@@ -922,6 +1013,21 @@ export class ServerTradingEngineService {
     this.highWaterMarks =
       {};
 
+    if (
+      !this.settings
+        .emergencyStop
+    ) {
+      this.killSwitchState = {
+        active: false,
+        type: null,
+        reason: null,
+        triggeredAt: null,
+      };
+
+      this.priceSafetyFailureCount =
+        0;
+    }
+
     this.processing =
       false;
 
@@ -953,6 +1059,12 @@ export class ServerTradingEngineService {
   async updateSettings(
     nextSettings = {},
   ) {
+    const previousEmergencyStop =
+      Boolean(
+        this.settings
+          .emergencyStop,
+      );
+
     this.settings =
       cleanSettings({
         ...this.settings,
@@ -960,14 +1072,24 @@ export class ServerTradingEngineService {
         ...nextSettings,
       });
 
-    await saveLocalSettings(
-      LOCAL_SETTINGS_KEY,
-      {
-        settings: {
-          ...this.settings,
-        },
-      },
-    );
+    if (
+      previousEmergencyStop &&
+      !this.settings
+        .emergencyStop
+    ) {
+      this.killSwitchState = {
+        active: false,
+        type: null,
+        reason: null,
+        triggeredAt: null,
+      };
+
+      this.priceSafetyFailureCount =
+        0;
+    }
+
+    await this
+      .persistRuntime();
 
     this.status =
       this.settings
@@ -979,6 +1101,172 @@ export class ServerTradingEngineService {
           : "Disabled";
 
     return this.getState();
+  }
+
+  async triggerEmergencyStop({
+    type =
+      "AUTOMATIC_KILL_SWITCH",
+
+    reason =
+      "Automatic safety condition triggered.",
+
+    state =
+      null,
+  } = {}) {
+    if (
+      this.settings
+        .emergencyStop &&
+      this.killSwitchState
+        .active
+    ) {
+      return this.getState();
+    }
+
+    const symbol =
+      String(
+        state?.symbol ||
+          this.lastDecision
+            ?.symbol ||
+          "SYSTEM",
+      )
+        .trim()
+        .toUpperCase();
+
+    const timeframe =
+      state?.timeframe ||
+      this.lastDecision
+        ?.timeframe ||
+      null;
+
+    const price =
+      Number(
+        state?.price,
+      );
+
+    this.settings =
+      cleanSettings({
+        ...this.settings,
+
+        emergencyStop:
+          true,
+      });
+
+    this.killSwitchState = {
+      active: true,
+      type,
+      reason,
+      triggeredAt:
+        Date.now(),
+    };
+
+    this.status =
+      "Emergency stop active";
+
+    this.lastRiskEvent =
+      saveRiskEvent({
+        type:
+          "AUTOMATIC_KILL_SWITCH",
+
+        symbol:
+          symbol ||
+          "SYSTEM",
+
+        timeframe,
+
+        price:
+          Number.isFinite(
+            price,
+          )
+            ? price
+            : null,
+
+        quantity:
+          0,
+
+        executed:
+          true,
+
+        orderKey:
+          null,
+
+        message:
+          `${type}: ${reason}`,
+
+        timestamp:
+          Date.now(),
+      });
+
+    await this
+      .persistRuntime();
+
+    console.error(
+      "Automatic kill switch triggered:",
+      type,
+      reason,
+    );
+
+    return this.getState();
+  }
+
+  async recordPriceSafetyFailure({
+    state,
+    reason,
+  }) {
+    if (
+      this.settings
+        .emergencyStop &&
+      this.killSwitchState
+        .active
+    ) {
+      return;
+    }
+
+    this.priceSafetyFailureCount =
+      Math.max(
+        Number(
+          this
+            .priceSafetyFailureCount,
+        ) ||
+          0,
+        0,
+      ) +
+      1;
+
+    if (
+      this.priceSafetyFailureCount >=
+      AUTOMATIC_PRICE_SAFETY_FAILURE_LIMIT
+    ) {
+      await this
+        .triggerEmergencyStop({
+          type:
+            "REPEATED_PRICE_SAFETY_FAILURES",
+
+          reason:
+            `${this.priceSafetyFailureCount} consecutive market-price safety failures were detected. Latest failure: ${reason}`,
+
+          state,
+        });
+
+      return;
+    }
+
+    await this
+      .persistRuntime();
+  }
+
+  async clearPriceSafetyFailures() {
+    if (
+      this.priceSafetyFailureCount ===
+      0
+    ) {
+      return;
+    }
+
+    this.priceSafetyFailureCount =
+      0;
+
+    await this
+      .persistRuntime();
   }
 
   async handleMarketUpdate(
@@ -1102,6 +1390,14 @@ export class ServerTradingEngineService {
 
         reason:
           "daily loss limit reached",
+
+        triggerKillSwitch:
+          true,
+
+        killSwitchType:
+          "DAILY_LOSS_LIMIT",
+
+        realizedProfitToday,
       };
     }
 
@@ -1339,6 +1635,38 @@ export class ServerTradingEngineService {
         if (
           !riskGate.allowed
         ) {
+          if (
+            riskGate
+              .triggerKillSwitch
+          ) {
+            await this
+              .triggerEmergencyStop({
+                type:
+                  riskGate
+                    .killSwitchType ||
+                  "RISK_GATE",
+
+                reason:
+                  `Daily realized P/L is ${Number(
+                    riskGate
+                      .realizedProfitToday ||
+                      0,
+                  ).toFixed(
+                    2,
+                  )}, which reached the configured loss limit of -$${Math.abs(
+                    Number(
+                      this.settings
+                        .dailyLossLimit,
+                    ) ||
+                      0,
+                  ).toFixed(
+                    2,
+                  )}.`,
+
+                state,
+              });
+          }
+
           await this
             .recordDecision(
               createDecision({
@@ -1372,6 +1700,13 @@ export class ServerTradingEngineService {
           );
 
           await this
+            .recordPriceSafetyFailure({
+              state,
+              reason:
+                priceSafety.reason,
+            });
+
+          await this
             .recordDecision(
               createDecision({
                 state,
@@ -1385,6 +1720,9 @@ export class ServerTradingEngineService {
 
           return;
         }
+
+        await this
+          .clearPriceSafetyFailures();
 
         const marketPrice =
           priceSafety.price;
@@ -1610,8 +1948,6 @@ export class ServerTradingEngineService {
             },
 
             /*
-             * ROADMAP #7
-             *
              * Preserve signal identity with
              * the trade for later strategy
              * performance analysis.
@@ -1756,6 +2092,13 @@ export class ServerTradingEngineService {
           );
 
           await this
+            .recordPriceSafetyFailure({
+              state,
+              reason:
+                priceSafety.reason,
+            });
+
+          await this
             .recordDecision(
               createDecision({
                 state,
@@ -1769,6 +2112,9 @@ export class ServerTradingEngineService {
 
           return;
         }
+
+        await this
+          .clearPriceSafetyFailures();
 
         const marketPrice =
           priceSafety.price;
@@ -1794,8 +2140,6 @@ export class ServerTradingEngineService {
             },
 
             /*
-             * ROADMAP #7
-             *
              * Preserve signal identity with
              * signal-driven exits.
              */
@@ -1909,11 +2253,20 @@ export class ServerTradingEngineService {
   async evaluateRisk(
     state,
   ) {
+    /*
+     * IMPORTANT:
+     *
+     * Emergency stop deliberately does NOT
+     * disable protective position exits.
+     *
+     * New signal trading is blocked above,
+     * but an already-open position can still
+     * be protected by stop loss, take profit,
+     * and trailing stop.
+     */
     if (
       !this.settings
         .enabled ||
-      this.settings
-        .emergencyStop ||
       this.processing
     ) {
       return;
@@ -2051,10 +2404,20 @@ export class ServerTradingEngineService {
         });
 
       await this
+        .recordPriceSafetyFailure({
+          state,
+          reason:
+            priceSafety.reason,
+        });
+
+      await this
         .persistRuntime();
 
       return;
     }
+
+    await this
+      .clearPriceSafetyFailures();
 
     const previousHigh =
       Number(
@@ -2243,8 +2606,6 @@ export class ServerTradingEngineService {
           },
 
           /*
-           * ROADMAP #7
-           *
            * Risk exits get their own strategy
            * identity so STOP_LOSS,
            * TAKE_PROFIT and TRAILING_STOP can
@@ -2369,9 +2730,12 @@ export class ServerTradingEngineService {
     };
 
     this.status =
-      decision.executed
-        ? `${decision.action} executed`
-        : "Monitoring";
+      this.settings
+        .emergencyStop
+        ? "Emergency stop active"
+        : decision.executed
+          ? `${decision.action} executed`
+          : "Monitoring";
 
     await this
       .persistRuntime();
