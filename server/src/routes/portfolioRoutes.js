@@ -11,11 +11,8 @@ import {
 /*
  * IMPORTANT:
  *
- * This route imports ONLY:
- *
- * ../services/paperPortfolioService.js
- *
- * That should be your SQLite implementation.
+ * This route imports ONLY the SQLite
+ * paper-portfolio implementation.
  *
  * There should be NO:
  *
@@ -134,7 +131,9 @@ function normalizeOrder(
   };
 }
 
-export function createPortfolioRouter() {
+export function createPortfolioRouter({
+  tradingEngineService,
+} = {}) {
   const router =
     Router();
 
@@ -293,6 +292,13 @@ export function createPortfolioRouter() {
    * ---------------------------------------------------------
    * POST /api/portfolio/reset
    * ---------------------------------------------------------
+   *
+   * Reset BOTH:
+   *
+   * 1. SQLite paper portfolio
+   * 2. Trading Engine runtime
+   *
+   * Trading settings remain unchanged.
    */
   router.post(
     "/reset",
@@ -309,10 +315,43 @@ export function createPortfolioRouter() {
               300,
           );
 
+        /*
+         * First reset the authoritative
+         * SQLite paper account.
+         */
         const resetResult =
           await resetPaperPortfolio({
             startingCash,
           });
+
+        /*
+         * =====================================================
+         * TRADING ENGINE RUNTIME RESET
+         * =====================================================
+         *
+         * Clear old:
+         *
+         * lastDecision
+         * lastRiskEvent
+         * lastProcessedCandle
+         * lastTradeTime
+         * highWaterMarks
+         *
+         * Do NOT change engine settings.
+         */
+        let engine =
+          null;
+
+        if (
+          tradingEngineService &&
+          typeof tradingEngineService
+            .resetRuntime ===
+            "function"
+        ) {
+          engine =
+            await tradingEngineService
+              .resetRuntime();
+        }
 
         /*
          * SQLite reset service currently
@@ -340,6 +379,24 @@ export function createPortfolioRouter() {
 
           portfolio,
 
+          /*
+           * Include the new engine state in
+           * the response so frontend/debugging
+           * can immediately verify the runtime
+           * was cleared.
+           */
+          engine,
+
+          reset: {
+            portfolio:
+              true,
+
+            tradingEngineRuntime:
+              Boolean(
+                engine,
+              ),
+          },
+
           updatedAt:
             Date.now(),
         });
@@ -361,7 +418,7 @@ export function createPortfolioRouter() {
    * Diagnostic endpoint.
    *
    * Open this in the browser whenever the
-   * wallet looks suspicious:
+   * wallet looks suspicious.
    *
    * http://localhost:5000/api/portfolio/reconcile
    */

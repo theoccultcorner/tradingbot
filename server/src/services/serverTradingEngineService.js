@@ -892,6 +892,64 @@ export class ServerTradingEngineService {
     );
   }
 
+  async resetRuntime() {
+    /*
+     * =========================================================
+     * RESET TRADING ENGINE RUNTIME
+     * =========================================================
+     *
+     * Used when the paper portfolio is reset.
+     *
+     * IMPORTANT:
+     * This does NOT change trading settings.
+     *
+     * It only removes runtime state that belongs
+     * to the old portfolio.
+     */
+
+    this.lastDecision =
+      null;
+
+    this.lastRiskEvent =
+      null;
+
+    this.lastProcessedCandle =
+      null;
+
+    this.lastTradeTime =
+      0;
+
+    this.highWaterMarks =
+      {};
+
+    this.processing =
+      false;
+
+    /*
+     * Keep the engine in the correct operational
+     * state after the runtime reset.
+     */
+    this.status =
+      this.settings
+        .emergencyStop
+        ? "Emergency stop active"
+        : this.settings
+            .enabled
+          ? "Monitoring"
+          : "Disabled";
+
+    /*
+     * Persist the cleared runtime.
+     *
+     * Without this, old runtime values could be
+     * restored the next time the server starts.
+     */
+    await this
+      .persistRuntime();
+
+    return this.getState();
+  }
+
   async updateSettings(
     nextSettings = {},
   ) {

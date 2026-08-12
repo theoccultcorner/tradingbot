@@ -116,10 +116,16 @@ export function createApp({
 
   /*
    * SQLite paper portfolio.
+   *
+   * Pass Trading Engine 2.0 into the
+   * portfolio router so a wallet reset can
+   * also clear stale engine runtime state.
    */
   app.use(
     "/api/portfolio",
-    createPortfolioRouter(),
+    createPortfolioRouter({
+      tradingEngineService,
+    }),
   );
 
   /*
