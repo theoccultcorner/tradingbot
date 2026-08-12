@@ -617,7 +617,7 @@ function BacktestPanel({
                 )}
               </strong>
             </article>
-
+  <TemporaryWalkForwardPanel />
             <article>
               <span>
                 Fees
@@ -655,7 +655,7 @@ function BacktestPanel({
           </p>
         </>
       )}
-      <TemporaryWalkForwardPanel />
+     
     </section>
     
   );
