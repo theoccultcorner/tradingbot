@@ -13,6 +13,7 @@ import MarketScannerPanel from "./components/MarketScannerPanel";
 import MarketStats from "./components/MarketStats";
 import NavigationMenu from "./components/NavigationMenu";
 import OrderBook from "./components/OrderBook";
+import PaperBacktestComparisonPanel from "./components/PaperBacktestComparisonPanel";
 import PortfolioPanel from "./components/PortfolioPanel";
 import RecentTrades from "./components/RecentTrades";
 import RiskManagerPanel from "./components/RiskManagerPanel";
@@ -135,6 +136,9 @@ const VIEW_TITLES = {
 
   backtest:
     "Backtesting",
+
+  comparison:
+    "Paper vs Backtest",
 
   activity:
     "Server Activity",
@@ -492,7 +496,9 @@ function App() {
         "Reset the paper account back to $300? This deletes its trade history.",
       );
 
-    if (!approved) {
+    if (
+      !approved
+    ) {
       return;
     }
 
@@ -1359,6 +1365,18 @@ function App() {
             candles={
               market.candles
             }
+            symbol={
+              symbol
+            }
+            timeframe={
+              timeframe
+            }
+          />
+        );
+
+      case "comparison":
+        return (
+          <PaperBacktestComparisonPanel
             symbol={
               symbol
             }

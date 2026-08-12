@@ -5,115 +5,205 @@ import {
 
 const MENU_GROUPS = [
   {
-    title: "Overview",
+    title:
+      "Overview",
 
     items: [
       {
-        id: "dashboard",
-        label: "Dashboard",
-        icon: "▣",
+        id:
+          "dashboard",
+
+        label:
+          "Dashboard",
+
+        icon:
+          "▣",
       },
 
       {
-        id: "market",
-        label: "Live Market",
-        icon: "↗",
+        id:
+          "market",
+
+        label:
+          "Live Market",
+
+        icon:
+          "↗",
       },
 
       {
-        id: "charts",
-        label: "Charts",
-        icon: "▦",
+        id:
+          "charts",
+
+        label:
+          "Charts",
+
+        icon:
+          "▦",
       },
 
       {
-        id: "wallet",
-        label: "Wallet",
-        icon: "$",
+        id:
+          "wallet",
+
+        label:
+          "Wallet",
+
+        icon:
+          "$",
       },
 
       {
-        id: "orders",
-        label: "Orders & Trades",
-        icon: "⇄",
+        id:
+          "orders",
+
+        label:
+          "Orders & Trades",
+
+        icon:
+          "⇄",
       },
     ],
   },
 
   {
-    title: "Automation",
+    title:
+      "Automation",
 
     items: [
       {
-        id: "engine",
-        label: "Trading Engine",
-        icon: "⚡",
+        id:
+          "engine",
+
+        label:
+          "Trading Engine",
+
+        icon:
+          "⚡",
       },
 
       {
-        id: "selector",
-        label: "Auto Market Selector",
-        icon: "◎",
+        id:
+          "selector",
+
+        label:
+          "Auto Market Selector",
+
+        icon:
+          "◎",
       },
 
       {
-        id: "scanner",
-        label: "Market Scanner",
-        icon: "⌕",
+        id:
+          "scanner",
+
+        label:
+          "Market Scanner",
+
+        icon:
+          "⌕",
       },
 
       {
-        id: "risk",
-        label: "Risk Manager",
-        icon: "◆",
+        id:
+          "risk",
+
+        label:
+          "Risk Manager",
+
+        icon:
+          "◆",
       },
     ],
   },
 
   {
-    title: "Analysis",
+    title:
+      "Analysis",
 
     items: [
       {
-        id: "signals",
-        label: "Signals",
-        icon: "◉",
+        id:
+          "signals",
+
+        label:
+          "Signals",
+
+        icon:
+          "◉",
       },
 
       {
-        id: "indicators",
-        label: "Indicators",
-        icon: "≋",
+        id:
+          "indicators",
+
+        label:
+          "Indicators",
+
+        icon:
+          "≋",
       },
 
       {
-        id: "analytics",
-        label: "Analytics",
-        icon: "▥",
+        id:
+          "analytics",
+
+        label:
+          "Analytics",
+
+        icon:
+          "▥",
       },
 
       {
-        id: "performance",
-        label: "Server Performance",
-        icon: "↗",
+        id:
+          "performance",
+
+        label:
+          "Server Performance",
+
+        icon:
+          "↗",
       },
 
       {
-        id: "backtest",
-        label: "Backtesting",
-        icon: "◫",
+        id:
+          "backtest",
+
+        label:
+          "Backtesting",
+
+        icon:
+          "◫",
+      },
+
+      {
+        id:
+          "comparison",
+
+        label:
+          "Paper vs Backtest",
+
+        icon:
+          "≍",
       },
     ],
   },
 
   {
-    title: "System",
+    title:
+      "System",
 
     items: [
       {
-        id: "activity",
-        label: "Server Activity",
-        icon: "☷",
+        id:
+          "activity",
+
+        label:
+          "Server Activity",
+
+        icon:
+          "☷",
       },
     ],
   },
