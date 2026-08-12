@@ -406,6 +406,33 @@ function calculateRiskScore(
         ?.maximumDrawdownPercent,
     );
 
+  const equityPointCount =
+    numberOrZero(
+      summary
+        ?.equityPointCount,
+    );
+
+  const performance1dComplete =
+    Boolean(
+      summary
+        ?.performance1d
+        ?.completePeriod,
+    );
+
+  /*
+   * A freshly reset equity history can show
+   * 0% drawdown simply because there has not
+   * been enough time to observe meaningful
+   * account movement.
+   *
+   * Do not award risk-readiness points until
+   * there is enough history to judge drawdown.
+   */
+  const drawdownHistoryAdequate =
+    performance1dComplete &&
+    equityPointCount >=
+      10;
+
   if (
     drawdown ===
     null
@@ -423,11 +450,51 @@ function calculateRiskScore(
       value:
         null,
 
+      historyAdequate:
+        false,
+
+      equityPointCount,
+
       passed:
         false,
 
       message:
         "Maximum drawdown data is unavailable.",
+    };
+  }
+
+  if (
+    !drawdownHistoryAdequate
+  ) {
+    return {
+      name:
+        "Risk Control",
+
+      score:
+        0,
+
+      maximumScore:
+        15,
+
+      value:
+        drawdown,
+
+      unit:
+        "%",
+
+      historyAdequate:
+        false,
+
+      equityPointCount,
+
+      maximumAcceptableDrawdownPercent:
+        MAXIMUM_ACCEPTABLE_DRAWDOWN_PERCENT,
+
+      passed:
+        false,
+
+      message:
+        "Drawdown history is still too new to judge risk reliably.",
     };
   }
 
@@ -466,6 +533,11 @@ function calculateRiskScore(
 
     unit:
       "%",
+
+    historyAdequate:
+      true,
+
+    equityPointCount,
 
     maximumAcceptableDrawdownPercent:
       MAXIMUM_ACCEPTABLE_DRAWDOWN_PERCENT,
@@ -1045,6 +1117,19 @@ function buildDataGaps({
         ?.closedTrades,
     );
 
+  const equityPointCount =
+    numberOrZero(
+      summary
+        ?.equityPointCount,
+    );
+
+  const performance1dComplete =
+    Boolean(
+      summary
+        ?.performance1d
+        ?.completePeriod,
+    );
+
   if (
     closedTrades <
     MINIMUM_CLOSED_TRADES
@@ -1096,6 +1181,29 @@ function buildDataGaps({
 
       message:
         "Paper-vs-test validation exists, but its sample is not yet statistically meaningful.",
+    });
+  }
+
+  /*
+   * Drawdown should not be trusted immediately
+   * after equity history has been reset.
+   *
+   * Require:
+   *
+   * - at least one complete 24-hour period
+   * - at least 10 stored equity snapshots
+   */
+  if (
+    !performance1dComplete ||
+    equityPointCount <
+      10
+  ) {
+    gaps.push({
+      code:
+        "DRAWDOWN_HISTORY_TOO_NEW",
+
+      message:
+        "Drawdown history is still too new to evaluate risk reliably.",
     });
   }
 
