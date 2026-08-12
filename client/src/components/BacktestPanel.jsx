@@ -630,7 +630,7 @@ function BacktestPanel({
               </strong>
             </article>
           </div>
-<TemporaryWalkForwardPanel />
+ 
           <p className="backtest-description">
             {result.id ? (
               <>
@@ -655,7 +655,9 @@ function BacktestPanel({
           </p>
         </>
       )}
+      <TemporaryWalkForwardPanel />
     </section>
+    
   );
 }
 
