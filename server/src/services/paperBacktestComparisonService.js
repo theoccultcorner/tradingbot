@@ -6,6 +6,12 @@ import {
 const DEFAULT_MINIMUM_SAMPLE =
   20;
 
+/*
+ * =========================================================
+ * BASIC HELPERS
+ * =========================================================
+ */
+
 function numberOrZero(
   value,
 ) {
@@ -151,12 +157,245 @@ function relativeDifferencePercent(
 
 /*
  * =========================================================
- * PAPER METRICS
+ * MARKET MATCHING
+ * =========================================================
+ */
+
+function sameMarket({
+  result,
+  symbol,
+  timeframe,
+}) {
+  if (
+    !result
+  ) {
+    return false;
+  }
+
+  return (
+    normalizeSymbol(
+      result.symbol,
+    ) ===
+      normalizeSymbol(
+        symbol,
+      ) &&
+    normalizeTimeframe(
+      result.timeframe,
+    ) ===
+      normalizeTimeframe(
+        timeframe,
+      )
+  );
+}
+
+/*
+ * IMPORTANT:
+ *
+ * Step 9 must compare LIKE-FOR-LIKE markets.
+ *
+ * BTCUSD 5m paper trading must NEVER silently
+ * fall back to BTCUSD 1m just because the
+ * symbol matches.
+ */
+function findMatchingResult({
+  results,
+  symbol,
+  timeframe,
+}) {
+  if (
+    !Array.isArray(
+      results,
+    )
+  ) {
+    return null;
+  }
+
+  return (
+    results.find(
+      (
+        result,
+      ) =>
+        sameMarket({
+          result,
+          symbol,
+          timeframe,
+        }),
+    ) ||
+    null
+  );
+}
+
+/*
+ * =========================================================
+ * PAPER DRAWDOWN VALIDATION
  * =========================================================
  *
- * Normalize PerformanceTrackingService.getSummary()
- * into the same shape used by our test metrics.
+ * We previously had contaminated equity snapshots where a
+ * crypto MARKET PRICE was effectively treated as ACCOUNT
+ * EQUITY.
+ *
+ * Example:
+ *
+ * starting bankroll: ~$300
+ * reported drawdown: ~$84,000
+ *
+ * That historical data must not be allowed to destroy the
+ * Step 9 match score.
+ *
+ * We do NOT silently rewrite the drawdown.
+ *
+ * Instead:
+ *
+ * - preserve the raw value
+ * - flag it as invalid
+ * - exclude it from the comparison score
  */
+function validatePaperDrawdown({
+  summary,
+  drawdownAmount,
+  drawdownPercent,
+}) {
+  const startingCash =
+    numberOrZero(
+      summary
+        ?.portfolio
+        ?.startingCash,
+    );
+
+  const currentEquity =
+    numberOrZero(
+      summary
+        ?.latestEquity
+        ?.equity,
+    );
+
+  const safeAccountReference =
+    Math.max(
+      startingCash,
+      currentEquity,
+      1,
+    );
+
+  const amount =
+    nullableNumber(
+      drawdownAmount,
+    );
+
+  const percent =
+    nullableNumber(
+      drawdownPercent,
+    );
+
+  const reasons =
+    [];
+
+  if (
+    amount ===
+      null ||
+    percent ===
+      null
+  ) {
+    reasons.push(
+      "Paper drawdown is missing or invalid.",
+    );
+  }
+
+  if (
+    percent !==
+      null &&
+    (
+      percent <
+        0 ||
+      percent >
+        100
+    )
+  ) {
+    reasons.push(
+      "Paper drawdown percentage is outside the expected 0-100% range.",
+    );
+  }
+
+  /*
+   * If amount and percent are both present, infer
+   * the equity peak from:
+   *
+   * drawdown % =
+   * drawdown amount / peak equity
+   */
+  if (
+    amount !==
+      null &&
+    amount >
+      0 &&
+    percent !==
+      null &&
+    percent >
+      0
+  ) {
+    const impliedPeak =
+      amount /
+      (
+        percent /
+        100
+      );
+
+    /*
+     * A historical peak more than 10x the
+     * currently known bankroll/equity is treated
+     * as suspicious for this paper account.
+     *
+     * This catches the contaminated BTC-price
+     * snapshot without rejecting normal movement.
+     */
+    if (
+      impliedPeak >
+      safeAccountReference *
+        10
+    ) {
+      reasons.push(
+        `Paper drawdown implies an equity peak of approximately $${impliedPeak.toFixed(
+          2,
+        )}, which is inconsistent with the current paper-account scale.`,
+      );
+    }
+  }
+
+  /*
+   * Extremely large drawdown amount compared with
+   * the known account scale is another independent
+   * corruption signal.
+   */
+  if (
+    amount !==
+      null &&
+    amount >
+      safeAccountReference *
+        10
+  ) {
+    reasons.push(
+      "Paper drawdown amount is far larger than the known paper-account scale.",
+    );
+  }
+
+  return {
+    valid:
+      reasons.length ===
+      0,
+
+    amount,
+
+    percent,
+
+    reasons,
+  };
+}
+
+/*
+ * =========================================================
+ * PAPER METRICS
+ * =========================================================
+ */
+
 function buildPaperMetrics(
   summary,
 ) {
@@ -166,9 +405,46 @@ function buildPaperMetrics(
         ?.closedTrades,
     );
 
+  const rawDrawdownPercent =
+    nullableNumber(
+      summary
+        ?.maximumDrawdownPercent,
+    );
+
+  const rawDrawdownAmount =
+    nullableNumber(
+      summary
+        ?.maximumDrawdownAmount,
+    );
+
+  const drawdownValidation =
+    validatePaperDrawdown({
+      summary,
+
+      drawdownAmount:
+        rawDrawdownAmount,
+
+      drawdownPercent:
+        rawDrawdownPercent,
+    });
+
   return {
     source:
       "PAPER_TRADING",
+
+    startingCash:
+      numberOrZero(
+        summary
+          ?.portfolio
+          ?.startingCash,
+      ),
+
+    currentEquity:
+      numberOrZero(
+        summary
+          ?.latestEquity
+          ?.equity,
+      ),
 
     returnPercent:
       numberOrZero(
@@ -215,17 +491,35 @@ function buildPaperMetrics(
           ?.averageProfitPerClosedTrade,
       ),
 
+    /*
+     * Use null when contaminated so this value
+     * cannot be scored as if it were trustworthy.
+     */
     maximumDrawdownPercent:
-      numberOrZero(
-        summary
-          ?.maximumDrawdownPercent,
-      ),
+      drawdownValidation
+        .valid
+        ? rawDrawdownPercent
+        : null,
 
     maximumDrawdownAmount:
-      numberOrZero(
-        summary
-          ?.maximumDrawdownAmount,
-      ),
+      drawdownValidation
+        .valid
+        ? rawDrawdownAmount
+        : null,
+
+    rawMaximumDrawdownPercent:
+      rawDrawdownPercent,
+
+    rawMaximumDrawdownAmount:
+      rawDrawdownAmount,
+
+    drawdownDataValid:
+      drawdownValidation
+        .valid,
+
+    drawdownWarnings:
+      drawdownValidation
+        .reasons,
 
     totalFees:
       numberOrZero(
@@ -274,6 +568,7 @@ function buildPaperMetrics(
  * STANDARD BACKTEST METRICS
  * =========================================================
  */
+
 function buildBacktestMetrics(
   result,
 ) {
@@ -289,11 +584,6 @@ function buildBacktestMetrics(
         .closedTradeCount,
     );
 
-  /*
-   * Backtest averageTrade is the closest direct
-   * equivalent to paper expectancy per closed
-   * trade.
-   */
   return {
     source:
       "STANDARD_BACKTEST",
@@ -337,6 +627,10 @@ function buildBacktestMetrics(
               .profitFactor,
           ),
 
+    /*
+     * averageTrade is the direct closed-trade
+     * equivalent of paper expectancy.
+     */
     expectancy:
       numberOrZero(
         result
@@ -350,13 +644,13 @@ function buildBacktestMetrics(
       ),
 
     maximumDrawdownPercent:
-      numberOrZero(
+      nullableNumber(
         result
           .maximumDrawdownPercent,
       ),
 
     maximumDrawdownAmount:
-      numberOrZero(
+      nullableNumber(
         result
           .maximumDrawdownAmount,
       ),
@@ -367,6 +661,11 @@ function buildBacktestMetrics(
           .totalFees,
       ),
 
+    /*
+     * Standard backtest currently has fees but
+     * does not separately model our paper
+     * slippage estimate.
+     */
     estimatedSlippage:
       0,
 
@@ -438,10 +737,8 @@ function buildBacktestMetrics(
  * =========================================================
  * WALK-FORWARD METRICS
  * =========================================================
- *
- * Walk-forward results are especially useful because they
- * are already based on out-of-sample windows.
  */
+
 function buildWalkForwardMetrics(
   result,
 ) {
@@ -500,10 +797,6 @@ function buildWalkForwardMetrics(
               .profitFactor,
           ),
 
-    /*
-     * Walk-forward has a dedicated
-     * out-of-sample expectancy metric.
-     */
     expectancy:
       numberOrZero(
         result
@@ -519,13 +812,13 @@ function buildWalkForwardMetrics(
       ),
 
     maximumDrawdownPercent:
-      numberOrZero(
+      nullableNumber(
         result
           .maximumDrawdownPercent,
       ),
 
     maximumDrawdownAmount:
-      numberOrZero(
+      nullableNumber(
         result
           .maximumDrawdownAmount,
       ),
@@ -644,6 +937,7 @@ function buildWalkForwardMetrics(
  * METRIC COMPARISON
  * =========================================================
  */
+
 function compareMetrics(
   paper,
   tested,
@@ -655,8 +949,29 @@ function compareMetrics(
     return null;
   }
 
+  const paperDrawdown =
+    nullableNumber(
+      paper
+        .maximumDrawdownPercent,
+    );
+
+  const testedDrawdown =
+    nullableNumber(
+      tested
+        .maximumDrawdownPercent,
+    );
+
+  const drawdownAvailable =
+    paperDrawdown !==
+      null &&
+    testedDrawdown !==
+      null;
+
   return {
     returnPercent: {
+      available:
+        true,
+
       paper:
         paper.returnPercent,
 
@@ -683,6 +998,9 @@ function compareMetrics(
     },
 
     profit: {
+      available:
+        true,
+
       paper:
         paper.profit,
 
@@ -703,6 +1021,9 @@ function compareMetrics(
     },
 
     winRate: {
+      available:
+        true,
+
       paper:
         paper.winRate,
 
@@ -723,6 +1044,19 @@ function compareMetrics(
     },
 
     profitFactor: {
+      /*
+       * null profit factor can legitimately mean
+       * no losing trades.
+       *
+       * If either side is null, do not score the
+       * numeric gap.
+       */
+      available:
+        paper.profitFactor !==
+          null &&
+        tested.profitFactor !==
+          null,
+
       paper:
         paper.profitFactor,
 
@@ -743,6 +1077,9 @@ function compareMetrics(
     },
 
     expectancy: {
+      available:
+        true,
+
       paper:
         paper.expectancy,
 
@@ -763,47 +1100,57 @@ function compareMetrics(
     },
 
     maximumDrawdownPercent: {
+      available:
+        drawdownAvailable,
+
       paper:
-        paper
-          .maximumDrawdownPercent,
+        paperDrawdown,
 
       tested:
-        tested
-          .maximumDrawdownPercent,
+        testedDrawdown,
 
       difference:
-        absoluteDifference(
-          paper
-            .maximumDrawdownPercent,
-          tested
-            .maximumDrawdownPercent,
-        ),
+        drawdownAvailable
+          ? absoluteDifference(
+              paperDrawdown,
+              testedDrawdown,
+            )
+          : null,
 
       absoluteGap:
-        absoluteGap(
-          paper
-            .maximumDrawdownPercent,
-          tested
-            .maximumDrawdownPercent,
-        ),
+        drawdownAvailable
+          ? absoluteGap(
+              paperDrawdown,
+              testedDrawdown,
+            )
+          : null,
 
-      /*
-       * Positive means paper drawdown is WORSE.
-       */
       paperWorseBy:
-        Math.max(
-          absoluteDifference(
-            paper
-              .maximumDrawdownPercent,
-            tested
-              .maximumDrawdownPercent,
-          ) ||
-            0,
-          0,
-        ),
+        drawdownAvailable
+          ? Math.max(
+              absoluteDifference(
+                paperDrawdown,
+                testedDrawdown,
+              ) ||
+                0,
+              0,
+            )
+          : null,
+
+      excludedReason:
+        drawdownAvailable
+          ? null
+          : paper
+              .drawdownDataValid ===
+            false
+            ? "Paper drawdown data failed validation and was excluded from scoring."
+            : "Drawdown data is unavailable.",
     },
 
     closedTrades: {
+      available:
+        true,
+
       paper:
         paper.closedTrades,
 
@@ -818,6 +1165,9 @@ function compareMetrics(
     },
 
     totalFees: {
+      available:
+        true,
+
       paper:
         paper.totalFees,
 
@@ -835,16 +1185,17 @@ function compareMetrics(
 
 /*
  * =========================================================
- * COMPARISON SCORE
+ * MATCH SCORE
  * =========================================================
  *
- * This is NOT a profitability score.
+ * IMPORTANT:
  *
- * It measures how closely paper behavior resembles
- * tested behavior.
+ * This measures similarity.
  *
- * A strategy can achieve a high match score while still
- * being unprofitable in both environments.
+ * It does NOT measure profitability.
+ *
+ * Two losing systems could theoretically be
+ * extremely similar and receive a high match score.
  */
 function calculateMatchScore(
   comparison,
@@ -852,136 +1203,237 @@ function calculateMatchScore(
   if (
     !comparison
   ) {
-    return 0;
+    return null;
   }
 
   let score =
     100;
 
-  /*
-   * Return gap:
-   * lose up to 25 points.
-   */
-  const returnGap =
-    numberOrZero(
-      comparison
-        .returnPercent
-        ?.absoluteGap,
-    );
+  let availableWeight =
+    0;
 
-  score -=
-    Math.min(
-      returnGap *
-        5,
-      25,
-    );
+  let possibleWeight =
+    0;
 
   /*
-   * Win-rate gap:
-   * lose up to 20 points.
+   * RETURN
+   *
+   * Maximum penalty: 25
    */
-  const winRateGap =
-    numberOrZero(
-      comparison
-        .winRate
-        ?.absoluteGap,
-    );
-
-  score -=
-    Math.min(
-      winRateGap *
-        1.25,
-      20,
-    );
-
-  /*
-   * Profit-factor gap:
-   * lose up to 20 points.
-   */
-  const profitFactorGap =
-    nullableNumber(
-      comparison
-        .profitFactor
-        ?.absoluteGap,
-    );
+  possibleWeight +=
+    25;
 
   if (
-    profitFactorGap !==
-    null
+    comparison
+      .returnPercent
+      ?.available
   ) {
+    availableWeight +=
+      25;
+
+    const gap =
+      numberOrZero(
+        comparison
+          .returnPercent
+          .absoluteGap,
+      );
+
     score -=
       Math.min(
-        profitFactorGap *
+        gap *
+          5,
+        25,
+      );
+  }
+
+  /*
+   * WIN RATE
+   *
+   * Maximum penalty: 20
+   */
+  possibleWeight +=
+    20;
+
+  if (
+    comparison
+      .winRate
+      ?.available
+  ) {
+    availableWeight +=
+      20;
+
+    const gap =
+      numberOrZero(
+        comparison
+          .winRate
+          .absoluteGap,
+      );
+
+    score -=
+      Math.min(
+        gap *
+          1.25,
+        20,
+      );
+  }
+
+  /*
+   * PROFIT FACTOR
+   *
+   * Maximum penalty: 20
+   */
+  possibleWeight +=
+    20;
+
+  if (
+    comparison
+      .profitFactor
+      ?.available
+  ) {
+    availableWeight +=
+      20;
+
+    const gap =
+      numberOrZero(
+        comparison
+          .profitFactor
+          .absoluteGap,
+      );
+
+    score -=
+      Math.min(
+        gap *
           20,
         20,
       );
   }
 
   /*
-   * Expectancy gap:
+   * EXPECTANCY
    *
-   * Relative to tested expectancy where possible.
-   * Lose up to 20 points.
+   * Maximum penalty: 20
    */
-  const testedExpectancy =
-    Math.abs(
+  possibleWeight +=
+    20;
+
+  if (
+    comparison
+      .expectancy
+      ?.available
+  ) {
+    availableWeight +=
+      20;
+
+    const testedExpectancy =
+      Math.abs(
+        numberOrZero(
+          comparison
+            .expectancy
+            .tested,
+        ),
+      );
+
+    const expectancyGap =
       numberOrZero(
         comparison
           .expectancy
-          ?.tested,
-      ),
-    );
-
-  const expectancyGap =
-    numberOrZero(
-      comparison
-        .expectancy
-        ?.absoluteGap,
-    );
-
-  if (
-    testedExpectancy >
-    0
-  ) {
-    score -=
-      Math.min(
-        (
-          expectancyGap /
-          testedExpectancy
-        ) *
-          20,
-        20,
+          .absoluteGap,
       );
-  } else if (
-    expectancyGap >
-    0
-  ) {
-    score -=
-      10;
+
+    if (
+      testedExpectancy >
+      0
+    ) {
+      score -=
+        Math.min(
+          (
+            expectancyGap /
+            testedExpectancy
+          ) *
+            20,
+          20,
+        );
+    } else if (
+      expectancyGap >
+      0
+    ) {
+      score -=
+        10;
+    }
   }
 
   /*
-   * Drawdown gap:
-   * lose up to 15 points.
+   * DRAWDOWN
+   *
+   * Maximum penalty: 15
+   *
+   * If paper drawdown is contaminated, this
+   * entire metric is excluded.
    */
-  const drawdownGap =
-    numberOrZero(
-      comparison
-        .maximumDrawdownPercent
-        ?.absoluteGap,
-    );
+  possibleWeight +=
+    15;
 
-  score -=
-    Math.min(
-      drawdownGap *
-        3,
-      15,
-    );
+  if (
+    comparison
+      .maximumDrawdownPercent
+      ?.available
+  ) {
+    availableWeight +=
+      15;
+
+    const gap =
+      numberOrZero(
+        comparison
+          .maximumDrawdownPercent
+          .absoluteGap,
+      );
+
+    score -=
+      Math.min(
+        gap *
+          3,
+        15,
+      );
+  }
+
+  /*
+   * If a metric is unavailable, normalize the
+   * remaining score so missing data doesn't act
+   * like an automatic failure.
+   */
+  if (
+    availableWeight <=
+    0
+  ) {
+    return null;
+  }
+
+  const unavailableWeight =
+    possibleWeight -
+    availableWeight;
+
+  const effectiveMaximum =
+    100 -
+    unavailableWeight;
+
+  if (
+    effectiveMaximum <=
+    0
+  ) {
+    return null;
+  }
+
+  const normalizedScore =
+    (
+      score /
+      effectiveMaximum
+    ) *
+    100;
 
   return Math.max(
     Math.min(
       Number(
-        score.toFixed(
+        normalizedScore.toFixed(
           2,
         ),
       ),
@@ -994,15 +1446,27 @@ function calculateMatchScore(
 function classifyMatch(
   score,
 ) {
+  const value =
+    nullableNumber(
+      score,
+    );
+
   if (
-    score >=
+    value ===
+    null
+  ) {
+    return "UNAVAILABLE";
+  }
+
+  if (
+    value >=
     85
   ) {
     return "GOOD_MATCH";
   }
 
   if (
-    score >=
+    value >=
     65
   ) {
     return "MODERATE_DRIFT";
@@ -1013,77 +1477,52 @@ function classifyMatch(
 
 /*
  * =========================================================
- * TEST SELECTION
+ * STATUS LOGIC
  * =========================================================
  */
-function findMatchingResult({
-  results,
-  symbol,
-  timeframe,
+
+function determineComparisonStatus({
+  tested,
+  paper,
+  matchScore,
 }) {
   if (
-    !Array.isArray(
-      results,
-    )
+    !tested
   ) {
-    return null;
+    return "NO_MATCHING_TEST";
   }
 
-  const normalizedSymbol =
-    normalizeSymbol(
-      symbol,
-    );
-
-  const normalizedTimeframe =
-    normalizeTimeframe(
-      timeframe,
-    );
-
   /*
-   * First preference:
-   * same symbol AND timeframe.
+   * Do not pretend we know whether paper and
+   * historical behavior match after only a tiny
+   * handful of trades.
    */
-  const exact =
-    results.find(
-      (
-        result,
-      ) =>
-        normalizeSymbol(
-          result?.symbol,
-        ) ===
-          normalizedSymbol &&
-        normalizeTimeframe(
-          result?.timeframe,
-        ) ===
-          normalizedTimeframe,
-    );
+  if (
+    !paper
+      ?.sampleAdequate ||
+    !tested
+      ?.sampleAdequate
+  ) {
+    return "INSUFFICIENT_SAMPLE";
+  }
 
   if (
-    exact
+    matchScore ===
+      null
   ) {
-    return exact;
+    return "INSUFFICIENT_DATA";
   }
 
-  /*
-   * Second preference:
-   * same symbol.
-   */
-  const symbolOnly =
-    results.find(
-      (
-        result,
-      ) =>
-        normalizeSymbol(
-          result?.symbol,
-        ) ===
-        normalizedSymbol,
-    );
-
-  return (
-    symbolOnly ||
-    null
+  return classifyMatch(
+    matchScore,
   );
 }
+
+/*
+ * =========================================================
+ * WARNINGS
+ * =========================================================
+ */
 
 function buildWarnings({
   paper,
@@ -1098,12 +1537,18 @@ function buildWarnings({
     !tested
   ) {
     warnings.push(
-      "No matching saved test was found.",
+      `No saved test was found for ${symbol || "the requested symbol"} ${timeframe || "and timeframe"}.`,
     );
 
     return warnings;
   }
 
+  /*
+   * This should no longer occur because exact
+   * market matching is mandatory.
+   *
+   * Keep the safeguards anyway.
+   */
   if (
     normalizeSymbol(
       tested.symbol,
@@ -1113,7 +1558,7 @@ function buildWarnings({
     )
   ) {
     warnings.push(
-      `The selected test uses ${tested.symbol}, while paper trading is currently being evaluated for ${symbol}.`,
+      `Test symbol ${tested.symbol} does not match paper symbol ${symbol}.`,
     );
   }
 
@@ -1126,40 +1571,92 @@ function buildWarnings({
     )
   ) {
     warnings.push(
-      `The selected test uses timeframe ${tested.timeframe}, while paper trading is currently being evaluated for ${timeframe}.`,
+      `Test timeframe ${tested.timeframe} does not match paper timeframe ${timeframe}.`,
     );
   }
 
   if (
-    !paper.sampleAdequate
+    !paper
+      .sampleAdequate
   ) {
     warnings.push(
-      `Paper trading has only ${paper.closedTrades} closed trades. At least ${DEFAULT_MINIMUM_SAMPLE} are recommended before treating the comparison as meaningful.`,
+      `Paper trading has only ${paper.closedTrades} closed trades. At least ${DEFAULT_MINIMUM_SAMPLE} are recommended before treating the comparison as statistically meaningful.`,
     );
   }
 
   if (
-    !tested.sampleAdequate
+    !tested
+      .sampleAdequate
   ) {
     warnings.push(
-      `The selected test has only ${tested.closedTrades} closed trades. At least ${DEFAULT_MINIMUM_SAMPLE} are recommended before treating the comparison as meaningful.`,
+      `The selected test has only ${tested.closedTrades} closed trades. At least ${DEFAULT_MINIMUM_SAMPLE} are recommended before treating the comparison as statistically meaningful.`,
     );
+  }
+
+  if (
+    paper
+      .drawdownDataValid ===
+    false
+  ) {
+    warnings.push(
+      "Paper drawdown data appears contaminated by historical equity snapshots and has been excluded from the comparison score.",
+    );
+
+    for (
+      const warning of
+      paper
+        .drawdownWarnings ||
+      []
+    ) {
+      warnings.push(
+        warning,
+      );
+    }
   }
 
   /*
-   * This first Step 9 implementation compares
-   * performance statistics.
+   * Step 9 v1 still compares aggregate metrics.
    *
-   * It does not yet guarantee that paper trading
-   * and the saved backtest cover the exact same
-   * wall-clock market interval.
+   * Exact identical start/end market-period
+   * alignment is a future enhancement.
    */
   warnings.push(
-    "This comparison matches symbol, timeframe and performance statistics, but does not yet guarantee identical historical start/end timestamps.",
+    "The comparison requires the same symbol and timeframe, but it does not yet guarantee that paper trading and the saved test cover identical wall-clock start and end timestamps.",
   );
 
   return warnings;
 }
+
+/*
+ * =========================================================
+ * SCORE AVAILABILITY
+ * =========================================================
+ */
+
+function validCompletedScore(
+  comparison,
+) {
+  if (
+    !comparison
+      ?.success
+  ) {
+    return null;
+  }
+
+  const score =
+    nullableNumber(
+      comparison
+        .matchScore,
+    );
+
+  return score;
+}
+
+/*
+ * =========================================================
+ * SERVICE
+ * =========================================================
+ */
 
 export class PaperBacktestComparisonService {
   constructor({
@@ -1179,7 +1676,7 @@ export class PaperBacktestComparisonService {
 
   /*
    * =======================================================
-   * STANDARD BACKTEST VS PAPER
+   * PAPER VS STANDARD BACKTEST
    * =======================================================
    */
   async compareStandard({
@@ -1226,10 +1723,14 @@ export class PaperBacktestComparisonService {
     let selectedResult =
       null;
 
+    /*
+     * If a specific ID is requested, it STILL must
+     * match the requested symbol and timeframe.
+     */
     if (
       backtestId
     ) {
-      selectedResult =
+      const requested =
         recentBacktests.find(
           (
             result,
@@ -1238,10 +1739,28 @@ export class PaperBacktestComparisonService {
             backtestId,
         ) ||
         null;
+
+      if (
+        requested &&
+        sameMarket({
+          result:
+            requested,
+
+          symbol:
+            activeSymbol,
+
+          timeframe:
+            activeTimeframe,
+        })
+      ) {
+        selectedResult =
+          requested;
+      }
     }
 
     if (
-      !selectedResult
+      !selectedResult &&
+      !backtestId
     ) {
       selectedResult =
         findMatchingResult({
@@ -1279,7 +1798,14 @@ export class PaperBacktestComparisonService {
         ? calculateMatchScore(
             comparison,
           )
-        : 0;
+        : null;
+
+    const status =
+      determineComparisonStatus({
+        tested,
+        paper,
+        matchScore,
+      });
 
     return {
       success:
@@ -1298,14 +1824,20 @@ export class PaperBacktestComparisonService {
         activeTimeframe ||
         null,
 
-      status:
-        tested
-          ? classifyMatch(
-              matchScore,
-            )
-          : "NO_MATCHING_TEST",
+      status,
 
       matchScore,
+
+      scoreMeaning:
+        "SIMILARITY_ONLY_NOT_PROFITABILITY",
+
+      statisticallyMeaningful:
+        Boolean(
+          paper
+            .sampleAdequate &&
+          tested
+            ?.sampleAdequate,
+        ),
 
       minimumRecommendedClosedTrades:
         DEFAULT_MINIMUM_SAMPLE,
@@ -1338,12 +1870,8 @@ export class PaperBacktestComparisonService {
 
   /*
    * =======================================================
-   * WALK-FORWARD VS PAPER
+   * PAPER VS WALK-FORWARD
    * =======================================================
-   *
-   * This comparison is especially useful because the
-   * walk-forward side is based on out-of-sample test
-   * windows rather than only one historical simulation.
    */
   async compareWalkForward({
     symbol =
@@ -1392,7 +1920,7 @@ export class PaperBacktestComparisonService {
     if (
       walkForwardId
     ) {
-      selectedResult =
+      const requested =
         recentTests.find(
           (
             result,
@@ -1401,10 +1929,28 @@ export class PaperBacktestComparisonService {
             walkForwardId,
         ) ||
         null;
+
+      if (
+        requested &&
+        sameMarket({
+          result:
+            requested,
+
+          symbol:
+            activeSymbol,
+
+          timeframe:
+            activeTimeframe,
+        })
+      ) {
+        selectedResult =
+          requested;
+      }
     }
 
     if (
-      !selectedResult
+      !selectedResult &&
+      !walkForwardId
     ) {
       selectedResult =
         findMatchingResult({
@@ -1442,7 +1988,14 @@ export class PaperBacktestComparisonService {
         ? calculateMatchScore(
             comparison,
           )
-        : 0;
+        : null;
+
+    const status =
+      determineComparisonStatus({
+        tested,
+        paper,
+        matchScore,
+      });
 
     return {
       success:
@@ -1461,14 +2014,20 @@ export class PaperBacktestComparisonService {
         activeTimeframe ||
         null,
 
-      status:
-        tested
-          ? classifyMatch(
-              matchScore,
-            )
-          : "NO_MATCHING_TEST",
+      status,
 
       matchScore,
+
+      scoreMeaning:
+        "SIMILARITY_ONLY_NOT_PROFITABILITY",
+
+      statisticallyMeaningful:
+        Boolean(
+          paper
+            .sampleAdequate &&
+          tested
+            ?.sampleAdequate,
+        ),
 
       minimumRecommendedClosedTrades:
         DEFAULT_MINIMUM_SAMPLE,
@@ -1503,8 +2062,6 @@ export class PaperBacktestComparisonService {
    * =======================================================
    * COMPLETE STEP 9 REPORT
    * =======================================================
-   *
-   * Returns BOTH comparisons in one call.
    */
   async getComparisonReport({
     symbol =
@@ -1529,26 +2086,26 @@ export class PaperBacktestComparisonService {
         }),
       ]);
 
+    /*
+     * Missing comparisons are EXCLUDED.
+     *
+     * They are NOT converted to score 0.
+     */
     const availableScores =
       [
-        standard.success
-          ? standard
-              .matchScore
-          : null,
+        validCompletedScore(
+          standard,
+        ),
 
-        walkForward.success
-          ? walkForward
-              .matchScore
-          : null,
+        validCompletedScore(
+          walkForward,
+        ),
       ].filter(
         (
           value,
         ) =>
-          Number.isFinite(
-            Number(
-              value,
-            ),
-          ),
+          value !==
+            null,
       );
 
     const combinedMatchScore =
@@ -1560,18 +2117,104 @@ export class PaperBacktestComparisonService {
               value,
             ) =>
               total +
-              Number(
-                value,
-              ),
+              value,
             0,
           ) /
           availableScores.length
-        : 0;
+        : null;
+
+    const hasAnyTest =
+      standard.success ||
+      walkForward.success;
+
+    const hasInsufficientSample =
+      [
+        standard,
+        walkForward,
+      ].some(
+        (
+          result,
+        ) =>
+          result.success &&
+          result.status ===
+            "INSUFFICIENT_SAMPLE",
+      );
+
+    let combinedStatus =
+      "NO_MATCHING_TEST";
+
+    if (
+      hasAnyTest
+    ) {
+      if (
+        hasInsufficientSample
+      ) {
+        combinedStatus =
+          "INSUFFICIENT_SAMPLE";
+      } else if (
+        combinedMatchScore !==
+        null
+      ) {
+        combinedStatus =
+          classifyMatch(
+            combinedMatchScore,
+          );
+      } else {
+        combinedStatus =
+          "INSUFFICIENT_DATA";
+      }
+    }
+
+    const combinedStatisticallyMeaningful =
+      hasAnyTest &&
+      [
+        standard,
+        walkForward,
+      ]
+        .filter(
+          (
+            result,
+          ) =>
+            result.success,
+        )
+        .every(
+          (
+            result,
+          ) =>
+            result
+              .statisticallyMeaningful,
+        );
+
+    const warnings =
+      [];
+
+    if (
+      !standard.success
+    ) {
+      warnings.push(
+        `No exact standard backtest match exists for ${standard.symbol || "the active symbol"} ${standard.timeframe || "the active timeframe"}.`,
+      );
+    }
+
+    if (
+      !walkForward.success
+    ) {
+      warnings.push(
+        `No exact walk-forward match exists for ${walkForward.symbol || "the active symbol"} ${walkForward.timeframe || "the active timeframe"}.`,
+      );
+    }
+
+    if (
+      hasInsufficientSample
+    ) {
+      warnings.push(
+        `At least ${DEFAULT_MINIMUM_SAMPLE} closed trades are recommended on both sides before Step 9 should be treated as statistically meaningful.`,
+      );
+    }
 
     return {
       success:
-        standard.success ||
-        walkForward.success,
+        hasAnyTest,
 
       roadmapStep:
         9,
@@ -1590,23 +2233,39 @@ export class PaperBacktestComparisonService {
         null,
 
       combinedMatchScore:
-        Number(
-          combinedMatchScore.toFixed(
-            2,
-          ),
-        ),
+        combinedMatchScore ===
+        null
+          ? null
+          : Number(
+              combinedMatchScore.toFixed(
+                2,
+              ),
+            ),
 
-      combinedStatus:
-        availableScores.length >
-        0
-          ? classifyMatch(
-              combinedMatchScore,
-            )
-          : "NO_MATCHING_TEST",
+      combinedStatus,
+
+      scoreMeaning:
+        "SIMILARITY_ONLY_NOT_PROFITABILITY",
+
+      statisticallyMeaningful:
+        combinedStatisticallyMeaningful,
+
+      minimumRecommendedClosedTrades:
+        DEFAULT_MINIMUM_SAMPLE,
+
+      availableComparisonCount:
+        [
+          standard.success,
+          walkForward.success,
+        ].filter(
+          Boolean,
+        ).length,
 
       standard,
 
       walkForward,
+
+      warnings,
 
       generatedAt:
         Date.now(),
