@@ -55,6 +55,58 @@ database.exec(`
   );
 `);
 
+database.exec(`
+  CREATE TABLE IF NOT EXISTS walk_forward_tests (
+    id TEXT PRIMARY KEY,
+    symbol TEXT NOT NULL,
+    timeframe TEXT NOT NULL,
+    candle_count INTEGER NOT NULL,
+
+    training_window INTEGER NOT NULL,
+    testing_window INTEGER NOT NULL,
+    step_size INTEGER NOT NULL,
+    window_count INTEGER NOT NULL,
+
+    starting_cash REAL NOT NULL,
+    ending_equity REAL NOT NULL,
+    total_profit REAL NOT NULL,
+    total_return_percent REAL NOT NULL,
+    total_fees REAL NOT NULL,
+
+    closed_trade_count INTEGER NOT NULL,
+    order_count INTEGER NOT NULL,
+    wins INTEGER NOT NULL,
+    losses INTEGER NOT NULL,
+    win_rate REAL NOT NULL,
+    gross_profit REAL NOT NULL,
+    gross_loss REAL NOT NULL,
+    profit_factor REAL,
+    average_trade REAL NOT NULL,
+
+    maximum_drawdown_amount REAL NOT NULL,
+    maximum_drawdown_percent REAL NOT NULL,
+
+    profitable_windows INTEGER NOT NULL,
+    losing_windows INTEGER NOT NULL,
+    break_even_windows INTEGER NOT NULL,
+    profitable_window_rate REAL NOT NULL,
+    average_training_return_percent REAL NOT NULL,
+    average_testing_return_percent REAL NOT NULL,
+    average_return_degradation_percent REAL NOT NULL,
+
+    settings_json TEXT NOT NULL,
+    windows_json TEXT NOT NULL,
+    closed_trades_json TEXT NOT NULL,
+    equity_curve_json TEXT NOT NULL,
+
+    completed_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_walk_forward_tests_created_at
+  ON walk_forward_tests(created_at);
+`);
+
 function normalizeCandle(
   kline,
 ) {
@@ -182,7 +234,9 @@ function calculateProfitFactor(
   const grossProfit =
     closedTrades
       .filter(
-        (trade) =>
+        (
+          trade,
+        ) =>
           trade.profit >
           0,
       )
@@ -200,7 +254,9 @@ function calculateProfitFactor(
     Math.abs(
       closedTrades
         .filter(
-          (trade) =>
+          (
+            trade,
+          ) =>
             trade.profit <
             0,
         )
@@ -216,7 +272,8 @@ function calculateProfitFactor(
     );
 
   if (
-    grossLoss === 0
+    grossLoss ===
+    0
   ) {
     return grossProfit >
       0
@@ -252,65 +309,172 @@ export async function fetchHistoricalCandles({
   timeframe,
   limit = 1000,
 }) {
+  /*
+   * Binance limits a single kline request to
+   * 1000 candles.
+   *
+   * Walk-forward testing needs more history,
+   * so fetch older batches by moving endTime
+   * backward until the requested amount has
+   * been collected.
+   */
   const safeLimit =
     Math.min(
       Math.max(
         Number(
           limit,
-        ) || 500,
+        ) ||
+          500,
         250,
       ),
-      1000,
+      5000,
     );
 
-  const query =
-    new URLSearchParams({
-      symbol:
-        String(
-          symbol,
-        ).toUpperCase(),
+  const normalizedSymbol =
+    String(
+      symbol,
+    ).toUpperCase();
 
-      interval:
-        String(
-          timeframe,
-        ),
-
-      limit:
-        String(
-          safeLimit,
-        ),
-    });
-
-  const response =
-    await fetch(
-      `${BINANCE_REST_URL}/api/v3/klines?${query}`,
+  const normalizedTimeframe =
+    String(
+      timeframe,
     );
 
-  const data =
-    await response.json();
+  const allCandles =
+    [];
 
-  if (
-    !response.ok
+  let endTime =
+    Date.now();
+
+  while (
+    allCandles.length <
+    safeLimit
   ) {
-    throw new Error(
-      data.msg ||
-        "Could not load historical candles.",
+    const remaining =
+      safeLimit -
+      allCandles.length;
+
+    const requestLimit =
+      Math.min(
+        remaining,
+        1000,
+      );
+
+    const query =
+      new URLSearchParams({
+        symbol:
+          normalizedSymbol,
+
+        interval:
+          normalizedTimeframe,
+
+        limit:
+          String(
+            requestLimit,
+          ),
+
+        endTime:
+          String(
+            endTime,
+          ),
+      });
+
+    const response =
+      await fetch(
+        `${BINANCE_REST_URL}/api/v3/klines?${query}`,
+      );
+
+    const data =
+      await response.json();
+
+    if (
+      !response.ok
+    ) {
+      throw new Error(
+        data.msg ||
+          "Could not load historical candles.",
+      );
+    }
+
+    if (
+      !Array.isArray(
+        data,
+      )
+    ) {
+      throw new Error(
+        "Binance returned invalid historical data.",
+      );
+    }
+
+    if (
+      data.length ===
+      0
+    ) {
+      break;
+    }
+
+    allCandles.unshift(
+      ...data.map(
+        normalizeCandle,
+      ),
+    );
+
+    const oldestOpenTime =
+      Number(
+        data[0]?.[0],
+      );
+
+    if (
+      !Number.isFinite(
+        oldestOpenTime,
+      )
+    ) {
+      break;
+    }
+
+    endTime =
+      oldestOpenTime -
+      1;
+
+    if (
+      data.length <
+      requestLimit
+    ) {
+      break;
+    }
+  }
+
+  /*
+   * Defensive de-duplication in case adjacent
+   * REST batches overlap by one candle.
+   */
+  const candleMap =
+    new Map();
+
+  for (
+    const candle of
+    allCandles
+  ) {
+    candleMap.set(
+      candle.time,
+      candle,
     );
   }
 
-  if (
-    !Array.isArray(
-      data,
+  return [
+    ...candleMap.values(),
+  ]
+    .sort(
+      (
+        left,
+        right,
+      ) =>
+        left.time -
+        right.time,
     )
-  ) {
-    throw new Error(
-      "Binance returned invalid historical data.",
+    .slice(
+      -safeLimit,
     );
-  }
-
-  return data.map(
-    normalizeCandle,
-  );
 }
 
 export function runStrategyBacktest({
@@ -325,6 +489,7 @@ export function runStrategyBacktest({
   stopLossPercent = 2,
   takeProfitPercent = 4,
   minimumHistory = 210,
+  closeOpenPositionAtEnd = false,
 }) {
   if (
     !Array.isArray(
@@ -365,14 +530,18 @@ export function runStrategyBacktest({
   for (
     let index =
       minimumHistory;
+
     index <
     candles.length;
-    index += 1
+
+    index +=
+      1
   ) {
     const history =
       candles.slice(
         0,
-        index + 1,
+        index +
+          1,
       );
 
     const candle =
@@ -390,7 +559,8 @@ export function runStrategyBacktest({
       !Number.isFinite(
         price,
       ) ||
-      price <= 0
+      price <=
+        0
     ) {
       continue;
     }
@@ -403,8 +573,10 @@ export function runStrategyBacktest({
     const signal =
       calculateTradingSignal({
         price,
+
         candles:
           history,
+
         indicators,
       });
 
@@ -491,7 +663,8 @@ export function runStrategyBacktest({
                 profit /
                 position
                   .entryValue
-              ) * 100
+              ) *
+              100
             : 0;
 
         const reason =
@@ -719,13 +892,179 @@ export function runStrategyBacktest({
     });
   }
 
+  const finalCandle =
+    candles[
+      candles.length -
+        1
+    ];
+
   const finalPrice =
     Number(
-      candles[
-        candles.length -
-          1
-      ].close,
+      finalCandle?.close,
     );
+
+  /*
+   * Walk-forward windows must end flat.
+   *
+   * Otherwise one test window could finish
+   * with an unrealized position that cannot
+   * be carried safely into the next window
+   * after parameters are re-optimized.
+   *
+   * Normal backtests keep their historical
+   * behavior because this option defaults
+   * to false.
+   */
+  if (
+    closeOpenPositionAtEnd &&
+    position &&
+    Number.isFinite(
+      finalPrice,
+    ) &&
+    finalPrice >
+      0
+  ) {
+    const grossProceeds =
+      position.quantity *
+      finalPrice;
+
+    const exitFee =
+      grossProceeds *
+      feeRate;
+
+    const netProceeds =
+      grossProceeds -
+      exitFee;
+
+    cash +=
+      netProceeds;
+
+    totalFees +=
+      exitFee;
+
+    const profit =
+      netProceeds -
+      position.entryValue -
+      position.entryFee;
+
+    const tradeReturn =
+      position.entryValue >
+      0
+        ? (
+            profit /
+            position.entryValue
+          ) *
+          100
+        : 0;
+
+    const closedTrade = {
+      entryTime:
+        position.entryTime,
+
+      exitTime:
+        finalCandle.time,
+
+      entryPrice:
+        position.entryPrice,
+
+      exitPrice:
+        finalPrice,
+
+      quantity:
+        position.quantity,
+
+      entryValue:
+        position.entryValue,
+
+      exitValue:
+        grossProceeds,
+
+      entryFee:
+        position.entryFee,
+
+      exitFee,
+
+      totalFees:
+        position.entryFee +
+        exitFee,
+
+      profit,
+
+      returnPercent:
+        tradeReturn,
+
+      exitReason:
+        "WINDOW_END",
+
+      entryConfidence:
+        position.entryConfidence,
+
+      entryScore:
+        position.entryScore,
+
+      exitConfidence:
+        null,
+
+      exitScore:
+        null,
+    };
+
+    closedTrades.push(
+      closedTrade,
+    );
+
+    orders.push({
+      side:
+        "SELL",
+
+      time:
+        finalCandle.time,
+
+      price:
+        finalPrice,
+
+      quantity:
+        position.quantity,
+
+      fee:
+        exitFee,
+
+      confidence:
+        null,
+
+      score:
+        null,
+
+      reason:
+        "WINDOW_END",
+
+      realizedProfit:
+        profit,
+    });
+
+    position =
+      null;
+
+    /*
+     * Replace the final marked-to-market point
+     * with the fully realized post-fee equity.
+     */
+    if (
+      equityCurve.length >
+      0
+    ) {
+      equityCurve[
+        equityCurve.length -
+          1
+      ] = {
+        time:
+          finalCandle.time,
+
+        equity:
+          cash,
+      };
+    }
+  }
 
   const openPositionValue =
     position &&
@@ -751,19 +1090,24 @@ export function runStrategyBacktest({
       ? (
           totalProfit /
           startingCash
-        ) * 100
+        ) *
+        100
       : 0;
 
   const winningTrades =
     closedTrades.filter(
-      (trade) =>
+      (
+        trade,
+      ) =>
         trade.profit >
         0,
     );
 
   const losingTrades =
     closedTrades.filter(
-      (trade) =>
+      (
+        trade,
+      ) =>
         trade.profit <
         0,
     );
@@ -776,7 +1120,8 @@ export function runStrategyBacktest({
             .length /
           closedTrades
             .length
-        ) * 100
+        ) *
+        100
       : 0;
 
   const grossProfit =
@@ -824,6 +1169,7 @@ export function runStrategyBacktest({
       stopLossPercent,
       takeProfitPercent,
       minimumHistory,
+      closeOpenPositionAtEnd,
     },
 
     startingCash,
@@ -937,7 +1283,8 @@ export async function runAndSaveBacktest(
         _,
         index,
       ) =>
-        index % 5 ===
+        index %
+          5 ===
           0 ||
         index ===
           result
@@ -1072,9 +1419,1812 @@ export async function runAndSaveBacktest(
 
   return {
     id,
+
     ...result,
+
     createdAt,
   };
+}
+
+function uniqueNumbers(
+  values,
+  {
+    minimum = 0,
+    maximum = Infinity,
+    decimals = 8,
+  } = {},
+) {
+  const unique =
+    new Set();
+
+  for (
+    const value of
+    values
+  ) {
+    const number =
+      Number(
+        value,
+      );
+
+    if (
+      !Number.isFinite(
+        number,
+      )
+    ) {
+      continue;
+    }
+
+    const bounded =
+      Math.min(
+        Math.max(
+          number,
+          minimum,
+        ),
+        maximum,
+      );
+
+    unique.add(
+      Number(
+        bounded.toFixed(
+          decimals,
+        ),
+      ),
+    );
+  }
+
+  return [
+    ...unique,
+  ];
+}
+
+function normalizeParameterGrid({
+  minimumScore,
+  minimumConfidence,
+  stopLossPercent,
+  takeProfitPercent,
+  parameterGrid,
+}) {
+  const configuredGrid =
+    parameterGrid &&
+    typeof parameterGrid ===
+      "object"
+      ? parameterGrid
+      : {};
+
+  const scoreBase =
+    Math.abs(
+      Number(
+        minimumScore,
+      ) ||
+        60,
+    );
+
+  const confidenceBase =
+    Math.abs(
+      Number(
+        minimumConfidence,
+      ) ||
+        60,
+    );
+
+  const stopBase =
+    Math.max(
+      Number(
+        stopLossPercent,
+      ) ||
+        2,
+      0.1,
+    );
+
+  const takeBase =
+    Math.max(
+      Number(
+        takeProfitPercent,
+      ) ||
+        4,
+      0.1,
+    );
+
+  /*
+   * Keep the default grid intentionally small.
+   *
+   * The signal calculation itself is relatively
+   * expensive, and walk-forward testing repeats
+   * the training backtest for every candidate.
+   *
+   * Callers can supply their own parameterGrid
+   * when they want a wider optimization search.
+   */
+  const minimumScores =
+    uniqueNumbers(
+      Array.isArray(
+        configuredGrid.minimumScore,
+      )
+        ? configuredGrid.minimumScore
+        : [
+            scoreBase -
+              10,
+
+            scoreBase,
+
+            scoreBase +
+              10,
+          ],
+      {
+        minimum:
+          0,
+
+        maximum:
+          100,
+
+        decimals:
+          2,
+      },
+    );
+
+  const minimumConfidences =
+    uniqueNumbers(
+      Array.isArray(
+        configuredGrid.minimumConfidence,
+      )
+        ? configuredGrid.minimumConfidence
+        : [
+            confidenceBase -
+              10,
+
+            confidenceBase,
+
+            confidenceBase +
+              10,
+          ],
+      {
+        minimum:
+          0,
+
+        maximum:
+          100,
+
+        decimals:
+          2,
+      },
+    );
+
+  const stopLossPercents =
+    uniqueNumbers(
+      Array.isArray(
+        configuredGrid.stopLossPercent,
+      )
+        ? configuredGrid.stopLossPercent
+        : [
+            stopBase,
+
+            stopBase *
+              1.25,
+          ],
+      {
+        minimum:
+          0.1,
+
+        maximum:
+          50,
+
+        decimals:
+          4,
+      },
+    );
+
+  const takeProfitPercents =
+    uniqueNumbers(
+      Array.isArray(
+        configuredGrid.takeProfitPercent,
+      )
+        ? configuredGrid.takeProfitPercent
+        : [
+            takeBase,
+
+            takeBase *
+              1.25,
+          ],
+      {
+        minimum:
+          0.1,
+
+        maximum:
+          100,
+
+        decimals:
+          4,
+      },
+    );
+
+  const candidates =
+    [];
+
+  for (
+    const candidateMinimumScore
+    of minimumScores
+  ) {
+    for (
+      const candidateMinimumConfidence
+      of minimumConfidences
+    ) {
+      for (
+        const candidateStopLossPercent
+        of stopLossPercents
+      ) {
+        for (
+          const candidateTakeProfitPercent
+          of takeProfitPercents
+        ) {
+          candidates.push({
+            minimumScore:
+              candidateMinimumScore,
+
+            minimumConfidence:
+              candidateMinimumConfidence,
+
+            stopLossPercent:
+              candidateStopLossPercent,
+
+            takeProfitPercent:
+              candidateTakeProfitPercent,
+          });
+        }
+      }
+    }
+  }
+
+  return {
+    minimumScore:
+      minimumScores,
+
+    minimumConfidence:
+      minimumConfidences,
+
+    stopLossPercent:
+      stopLossPercents,
+
+    takeProfitPercent:
+      takeProfitPercents,
+
+    candidates,
+  };
+}
+
+function scoreTrainingResult(
+  result,
+) {
+  if (
+    !result ||
+    result.closedTradeCount <=
+      0
+  ) {
+    return Number
+      .NEGATIVE_INFINITY;
+  }
+
+  /*
+   * Training optimization objective.
+   *
+   * Reward:
+   * - return
+   * - profit factor
+   * - larger closed-trade samples
+   *
+   * Penalize:
+   * - drawdown
+   *
+   * This score is used ONLY inside the
+   * training window. The following test
+   * window remains completely unseen.
+   */
+  const profitFactorContribution =
+    result.profitFactor ===
+    null
+      ? 6
+      : Math.min(
+          Math.max(
+            Number(
+              result.profitFactor,
+            ) ||
+              0,
+            0,
+          ),
+          3,
+        ) *
+        2;
+
+  const sampleContribution =
+    Math.min(
+      Number(
+        result.closedTradeCount,
+      ) ||
+        0,
+      20,
+    ) *
+    0.05;
+
+  return (
+    Number(
+      result.totalReturnPercent,
+    ) +
+    profitFactorContribution +
+    sampleContribution -
+    (
+      Number(
+        result.maximumDrawdownPercent,
+      ) ||
+      0
+    ) *
+      0.5
+  );
+}
+
+export function optimizeTrainingWindow({
+  candles,
+  symbol,
+  timeframe,
+  startingCash,
+  buyAmount,
+  feeRate,
+  minimumHistory,
+  minimumScore,
+  minimumConfidence,
+  stopLossPercent,
+  takeProfitPercent,
+  parameterGrid = null,
+}) {
+  const grid =
+    normalizeParameterGrid({
+      minimumScore,
+      minimumConfidence,
+      stopLossPercent,
+      takeProfitPercent,
+      parameterGrid,
+    });
+
+  let best =
+    null;
+
+  const candidateSummaries =
+    [];
+
+  for (
+    const candidate of
+    grid.candidates
+  ) {
+    const result =
+      runStrategyBacktest({
+        candles,
+        symbol,
+        timeframe,
+        startingCash,
+        buyAmount,
+        feeRate,
+        minimumHistory,
+
+        ...candidate,
+
+        closeOpenPositionAtEnd:
+          true,
+      });
+
+    const optimizationScore =
+      scoreTrainingResult(
+        result,
+      );
+
+    const candidateSummary = {
+      settings: {
+        ...candidate,
+      },
+
+      optimizationScore:
+        Number.isFinite(
+          optimizationScore,
+        )
+          ? optimizationScore
+          : null,
+
+      totalProfit:
+        result.totalProfit,
+
+      totalReturnPercent:
+        result.totalReturnPercent,
+
+      closedTradeCount:
+        result.closedTradeCount,
+
+      winRate:
+        result.winRate,
+
+      profitFactor:
+        result.profitFactor,
+
+      maximumDrawdownPercent:
+        result.maximumDrawdownPercent,
+    };
+
+    candidateSummaries.push(
+      candidateSummary,
+    );
+
+    if (
+      !best ||
+      optimizationScore >
+        best.optimizationScore
+    ) {
+      best = {
+        settings: {
+          ...candidate,
+        },
+
+        optimizationScore,
+
+        result,
+      };
+    }
+  }
+
+  /*
+   * Every candidate can theoretically produce
+   * zero closed trades. In that case choose the
+   * caller's base settings rather than failing
+   * the entire walk-forward test.
+   */
+  if (
+    !best ||
+    !Number.isFinite(
+      best.optimizationScore,
+    )
+  ) {
+    const fallbackSettings = {
+      minimumScore:
+        Math.abs(
+          Number(
+            minimumScore,
+          ) ||
+            60,
+        ),
+
+      minimumConfidence:
+        Math.abs(
+          Number(
+            minimumConfidence,
+          ) ||
+            60,
+        ),
+
+      stopLossPercent:
+        Math.max(
+          Number(
+            stopLossPercent,
+          ) ||
+            2,
+          0.1,
+        ),
+
+      takeProfitPercent:
+        Math.max(
+          Number(
+            takeProfitPercent,
+          ) ||
+            4,
+          0.1,
+        ),
+    };
+
+    const fallbackResult =
+      runStrategyBacktest({
+        candles,
+        symbol,
+        timeframe,
+        startingCash,
+        buyAmount,
+        feeRate,
+        minimumHistory,
+
+        ...fallbackSettings,
+
+        closeOpenPositionAtEnd:
+          true,
+      });
+
+    best = {
+      settings:
+        fallbackSettings,
+
+      optimizationScore:
+        scoreTrainingResult(
+          fallbackResult,
+        ),
+
+      result:
+        fallbackResult,
+    };
+  }
+
+  return {
+    selectedSettings: {
+      ...best.settings,
+    },
+
+    optimizationScore:
+      Number.isFinite(
+        best.optimizationScore,
+      )
+        ? best.optimizationScore
+        : null,
+
+    trainingResult:
+      best.result,
+
+    candidateCount:
+      grid.candidates.length,
+
+    parameterGrid: {
+      minimumScore:
+        grid.minimumScore,
+
+      minimumConfidence:
+        grid.minimumConfidence,
+
+      stopLossPercent:
+        grid.stopLossPercent,
+
+      takeProfitPercent:
+        grid.takeProfitPercent,
+    },
+
+    /*
+     * Store summaries rather than every full
+     * candidate backtest to keep the response
+     * and SQLite payload manageable.
+     */
+    candidates:
+      candidateSummaries,
+  };
+}
+
+export function runWalkForwardTest({
+  candles,
+  symbol,
+  timeframe,
+  startingCash = 10000,
+  buyAmount = 500,
+  feeRate = 0.001,
+  minimumScore = 60,
+  minimumConfidence = 60,
+  stopLossPercent = 2,
+  takeProfitPercent = 4,
+  minimumHistory = 210,
+  trainingWindow = 500,
+  testingWindow = 150,
+  stepSize = null,
+  parameterGrid = null,
+}) {
+  if (
+    !Array.isArray(
+      candles,
+    )
+  ) {
+    throw new Error(
+      "Walk-forward testing requires historical candles.",
+    );
+  }
+
+  const safeMinimumHistory =
+    Math.max(
+      Math.floor(
+        Number(
+          minimumHistory,
+        ) ||
+          210,
+      ),
+      20,
+    );
+
+  const safeTrainingWindow =
+    Math.max(
+      Math.floor(
+        Number(
+          trainingWindow,
+        ) ||
+          500,
+      ),
+      safeMinimumHistory +
+        25,
+    );
+
+  const safeTestingWindow =
+    Math.max(
+      Math.floor(
+        Number(
+          testingWindow,
+        ) ||
+          150,
+      ),
+      10,
+    );
+
+  const safeStepSize =
+    Math.max(
+      Math.floor(
+        Number(
+          stepSize,
+        ) ||
+          safeTestingWindow,
+      ),
+      1,
+    );
+
+  const requiredCandles =
+    safeTrainingWindow +
+    safeTestingWindow;
+
+  if (
+    candles.length <
+    requiredCandles
+  ) {
+    throw new Error(
+      `Walk-forward testing requires at least ${requiredCandles} candles for the configured training and testing windows.`,
+    );
+  }
+
+  const windows =
+    [];
+
+  const allOrders =
+    [];
+
+  const allClosedTrades =
+    [];
+
+  const outOfSampleEquityCurve =
+    [];
+
+  let currentCapital =
+    Number(
+      startingCash,
+    );
+
+  let windowIndex =
+    0;
+
+  for (
+    let trainingStart =
+      0;
+
+    trainingStart +
+      safeTrainingWindow +
+      safeTestingWindow <=
+    candles.length;
+
+    trainingStart +=
+      safeStepSize
+  ) {
+    const trainingEnd =
+      trainingStart +
+      safeTrainingWindow;
+
+    const testingStart =
+      trainingEnd;
+
+    const testingEnd =
+      testingStart +
+      safeTestingWindow;
+
+    const trainingCandles =
+      candles.slice(
+        trainingStart,
+        trainingEnd,
+      );
+
+    /*
+     * The test run receives warm-up candles
+     * from the END of the training period.
+     *
+     * runStrategyBacktest() starts making
+     * decisions only after minimumHistory,
+     * so these warm-up candles are used for
+     * indicators but NEVER counted as
+     * out-of-sample trading performance.
+     */
+    const warmupStart =
+      Math.max(
+        testingStart -
+          safeMinimumHistory,
+        trainingStart,
+      );
+
+    const testWithWarmup =
+      candles.slice(
+        warmupStart,
+        testingEnd,
+      );
+
+    const testMinimumHistory =
+      testingStart -
+      warmupStart;
+
+    if (
+      testMinimumHistory <
+      safeMinimumHistory
+    ) {
+      continue;
+    }
+
+    const optimization =
+      optimizeTrainingWindow({
+        candles:
+          trainingCandles,
+
+        symbol,
+        timeframe,
+
+        startingCash:
+          currentCapital,
+
+        buyAmount,
+        feeRate,
+
+        minimumHistory:
+          safeMinimumHistory,
+
+        minimumScore,
+        minimumConfidence,
+        stopLossPercent,
+        takeProfitPercent,
+
+        parameterGrid,
+      });
+
+    const testResult =
+      runStrategyBacktest({
+        candles:
+          testWithWarmup,
+
+        symbol,
+        timeframe,
+
+        startingCash:
+          currentCapital,
+
+        buyAmount,
+        feeRate,
+
+        minimumHistory:
+          testMinimumHistory,
+
+        ...optimization
+          .selectedSettings,
+
+        closeOpenPositionAtEnd:
+          true,
+      });
+
+    const trainingResult =
+      optimization
+        .trainingResult;
+
+    const returnDegradationPercent =
+      Number(
+        trainingResult
+          .totalReturnPercent,
+      ) -
+      Number(
+        testResult
+          .totalReturnPercent,
+      );
+
+    const window = {
+      index:
+        windowIndex,
+
+      training: {
+        startIndex:
+          trainingStart,
+
+        endIndex:
+          trainingEnd -
+          1,
+
+        startTime:
+          trainingCandles[0]
+            ?.time ||
+          null,
+
+        endTime:
+          trainingCandles[
+            trainingCandles.length -
+              1
+          ]?.time ||
+          null,
+
+        candleCount:
+          trainingCandles.length,
+
+        totalProfit:
+          trainingResult
+            .totalProfit,
+
+        totalReturnPercent:
+          trainingResult
+            .totalReturnPercent,
+
+        closedTradeCount:
+          trainingResult
+            .closedTradeCount,
+
+        winRate:
+          trainingResult
+            .winRate,
+
+        profitFactor:
+          trainingResult
+            .profitFactor,
+
+        maximumDrawdownPercent:
+          trainingResult
+            .maximumDrawdownPercent,
+
+        optimizationScore:
+          optimization
+            .optimizationScore,
+      },
+
+      testing: {
+        startIndex:
+          testingStart,
+
+        endIndex:
+          testingEnd -
+          1,
+
+        startTime:
+          candles[
+            testingStart
+          ]?.time ||
+          null,
+
+        endTime:
+          candles[
+            testingEnd -
+              1
+          ]?.time ||
+          null,
+
+        candleCount:
+          safeTestingWindow,
+
+        startingCash:
+          testResult
+            .startingCash,
+
+        endingEquity:
+          testResult
+            .endingEquity,
+
+        totalProfit:
+          testResult
+            .totalProfit,
+
+        totalReturnPercent:
+          testResult
+            .totalReturnPercent,
+
+        totalFees:
+          testResult
+            .totalFees,
+
+        closedTradeCount:
+          testResult
+            .closedTradeCount,
+
+        orderCount:
+          testResult
+            .orderCount,
+
+        wins:
+          testResult.wins,
+
+        losses:
+          testResult.losses,
+
+        winRate:
+          testResult.winRate,
+
+        profitFactor:
+          testResult
+            .profitFactor,
+
+        averageTrade:
+          testResult
+            .averageTrade,
+
+        maximumDrawdownAmount:
+          testResult
+            .maximumDrawdownAmount,
+
+        maximumDrawdownPercent:
+          testResult
+            .maximumDrawdownPercent,
+      },
+
+      selectedSettings: {
+        ...optimization
+          .selectedSettings,
+      },
+
+      candidateCount:
+        optimization
+          .candidateCount,
+
+      returnDegradationPercent,
+    };
+
+    windows.push(
+      window,
+    );
+
+    for (
+      const order of
+      testResult.orders
+    ) {
+      allOrders.push({
+        ...order,
+
+        walkForwardWindow:
+          windowIndex,
+      });
+    }
+
+    for (
+      const trade of
+      testResult.closedTrades
+    ) {
+      allClosedTrades.push({
+        ...trade,
+
+        walkForwardWindow:
+          windowIndex,
+      });
+    }
+
+    for (
+      const point of
+      testResult.equityCurve
+    ) {
+      outOfSampleEquityCurve.push({
+        ...point,
+
+        walkForwardWindow:
+          windowIndex,
+      });
+    }
+
+    currentCapital =
+      testResult
+        .endingEquity;
+
+    windowIndex +=
+      1;
+  }
+
+  if (
+    windows.length ===
+    0
+  ) {
+    throw new Error(
+      "No complete walk-forward windows could be created.",
+    );
+  }
+
+  const winningTrades =
+    allClosedTrades.filter(
+      (
+        trade,
+      ) =>
+        Number(
+          trade.profit,
+        ) >
+        0,
+    );
+
+  const losingTrades =
+    allClosedTrades.filter(
+      (
+        trade,
+      ) =>
+        Number(
+          trade.profit,
+        ) <
+        0,
+    );
+
+  const grossProfit =
+    winningTrades.reduce(
+      (
+        total,
+        trade,
+      ) =>
+        total +
+        Number(
+          trade.profit,
+        ),
+      0,
+    );
+
+  const grossLoss =
+    Math.abs(
+      losingTrades.reduce(
+        (
+          total,
+          trade,
+        ) =>
+          total +
+          Number(
+            trade.profit,
+          ),
+        0,
+      ),
+    );
+
+  const totalFees =
+    windows.reduce(
+      (
+        total,
+        window,
+      ) =>
+        total +
+        Number(
+          window.testing
+            .totalFees,
+        ),
+      0,
+    );
+
+  const profitableWindows =
+    windows.filter(
+      (
+        window,
+      ) =>
+        Number(
+          window.testing
+            .totalProfit,
+        ) >
+        0,
+    ).length;
+
+  const losingWindows =
+    windows.filter(
+      (
+        window,
+      ) =>
+        Number(
+          window.testing
+            .totalProfit,
+        ) <
+        0,
+    ).length;
+
+  const breakEvenWindows =
+    windows.length -
+    profitableWindows -
+    losingWindows;
+
+  const totalProfit =
+    currentCapital -
+    Number(
+      startingCash,
+    );
+
+  const totalReturnPercent =
+    Number(
+      startingCash,
+    ) >
+    0
+      ? (
+          totalProfit /
+          Number(
+            startingCash,
+          )
+        ) *
+        100
+      : 0;
+
+  const winRate =
+    allClosedTrades.length >
+    0
+      ? (
+          winningTrades.length /
+          allClosedTrades.length
+        ) *
+        100
+      : 0;
+
+  const maximumDrawdown =
+    calculateMaximumDrawdown(
+      outOfSampleEquityCurve,
+    );
+
+  const averageTrainingReturnPercent =
+    windows.reduce(
+      (
+        total,
+        window,
+      ) =>
+        total +
+        Number(
+          window.training
+            .totalReturnPercent,
+        ),
+      0,
+    ) /
+    windows.length;
+
+  const averageTestingReturnPercent =
+    windows.reduce(
+      (
+        total,
+        window,
+      ) =>
+        total +
+        Number(
+          window.testing
+            .totalReturnPercent,
+        ),
+      0,
+    ) /
+    windows.length;
+
+  const averageReturnDegradationPercent =
+    windows.reduce(
+      (
+        total,
+        window,
+      ) =>
+        total +
+        Number(
+          window
+            .returnDegradationPercent,
+        ),
+      0,
+    ) /
+    windows.length;
+
+  const completedAt =
+    Date.now();
+
+  return {
+    symbol,
+    timeframe,
+
+    candleCount:
+      candles.length,
+
+    settings: {
+      startingCash,
+      buyAmount,
+      feeRate,
+      minimumScore,
+      minimumConfidence,
+      stopLossPercent,
+      takeProfitPercent,
+
+      minimumHistory:
+        safeMinimumHistory,
+
+      trainingWindow:
+        safeTrainingWindow,
+
+      testingWindow:
+        safeTestingWindow,
+
+      stepSize:
+        safeStepSize,
+
+      parameterGrid:
+        normalizeParameterGrid({
+          minimumScore,
+          minimumConfidence,
+          stopLossPercent,
+          takeProfitPercent,
+          parameterGrid,
+        }),
+    },
+
+    methodology: {
+      type:
+        "ROLLING_WALK_FORWARD",
+
+      optimization:
+        "TRAIN_ONLY",
+
+      performanceScope:
+        "OUT_OF_SAMPLE_TEST_WINDOWS_ONLY",
+
+      warmup:
+        "PRECEDING_TRAINING_CANDLES",
+
+      positionHandling:
+        "FORCE_FLAT_AT_WINDOW_END",
+    },
+
+    trainingWindow:
+      safeTrainingWindow,
+
+    testingWindow:
+      safeTestingWindow,
+
+    stepSize:
+      safeStepSize,
+
+    windowCount:
+      windows.length,
+
+    profitableWindows,
+
+    losingWindows,
+
+    breakEvenWindows,
+
+    profitableWindowRate:
+      (
+        profitableWindows /
+        windows.length
+      ) *
+      100,
+
+    startingCash:
+      Number(
+        startingCash,
+      ),
+
+    endingEquity:
+      currentCapital,
+
+    totalProfit,
+
+    totalReturnPercent,
+
+    totalFees,
+
+    closedTradeCount:
+      allClosedTrades.length,
+
+    orderCount:
+      allOrders.length,
+
+    wins:
+      winningTrades.length,
+
+    losses:
+      losingTrades.length,
+
+    winRate,
+
+    grossProfit,
+
+    grossLoss,
+
+    profitFactor:
+      calculateProfitFactor(
+        allClosedTrades,
+      ),
+
+    averageTrade:
+      allClosedTrades.length >
+      0
+        ? allClosedTrades.reduce(
+            (
+              total,
+              trade,
+            ) =>
+              total +
+              Number(
+                trade.profit,
+              ),
+            0,
+          ) /
+          allClosedTrades.length
+        : 0,
+
+    outOfSampleExpectancy:
+      allClosedTrades.length >
+      0
+        ? totalProfit /
+          allClosedTrades.length
+        : 0,
+
+    maximumDrawdownAmount:
+      maximumDrawdown
+        .amount,
+
+    maximumDrawdownPercent:
+      maximumDrawdown
+        .percent,
+
+    averageTrainingReturnPercent,
+
+    averageTestingReturnPercent,
+
+    averageReturnDegradationPercent,
+
+    windows,
+
+    orders:
+      allOrders,
+
+    closedTrades:
+      allClosedTrades,
+
+    equityCurve:
+      outOfSampleEquityCurve,
+
+    completedAt,
+  };
+}
+
+export async function runAndSaveWalkForwardTest(
+  settings,
+) {
+  const candles =
+    await fetchHistoricalCandles({
+      ...settings,
+
+      /*
+       * A normal backtest defaults to 1000.
+       * Walk-forward testing benefits from
+       * a longer sequence by default.
+       */
+      limit:
+        Number(
+          settings?.limit,
+        ) ||
+        3000,
+    });
+
+  const result =
+    runWalkForwardTest({
+      ...settings,
+      candles,
+    });
+
+  const id =
+    crypto.randomUUID();
+
+  const createdAt =
+    Date.now();
+
+  /*
+   * Keep enough detail for diagnostics without
+   * allowing one test to create an enormous
+   * SQLite row.
+   */
+  const storedWindows =
+    result.windows.slice(
+      -100,
+    );
+
+  const storedClosedTrades =
+    result.closedTrades.slice(
+      -500,
+    );
+
+  const storedEquityCurve =
+    result.equityCurve.filter(
+      (
+        _,
+        index,
+      ) =>
+        index %
+          5 ===
+          0 ||
+        index ===
+          result
+            .equityCurve
+            .length -
+            1,
+    );
+
+  database
+    .prepare(
+      `
+        INSERT INTO walk_forward_tests (
+          id,
+          symbol,
+          timeframe,
+          candle_count,
+
+          training_window,
+          testing_window,
+          step_size,
+          window_count,
+
+          starting_cash,
+          ending_equity,
+          total_profit,
+          total_return_percent,
+          total_fees,
+
+          closed_trade_count,
+          order_count,
+          wins,
+          losses,
+          win_rate,
+          gross_profit,
+          gross_loss,
+          profit_factor,
+          average_trade,
+
+          maximum_drawdown_amount,
+          maximum_drawdown_percent,
+
+          profitable_windows,
+          losing_windows,
+          break_even_windows,
+          profitable_window_rate,
+          average_training_return_percent,
+          average_testing_return_percent,
+          average_return_degradation_percent,
+
+          settings_json,
+          windows_json,
+          closed_trades_json,
+          equity_curve_json,
+
+          completed_at,
+          created_at
+        )
+        VALUES (
+          ?, ?, ?, ?,
+          ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?, ?, ?, ?,
+          ?, ?,
+          ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?,
+          ?, ?
+        )
+      `,
+    )
+    .run(
+      id,
+
+      result.symbol,
+
+      result.timeframe,
+
+      result.candleCount,
+
+      result.trainingWindow,
+
+      result.testingWindow,
+
+      result.stepSize,
+
+      result.windowCount,
+
+      result.startingCash,
+
+      result.endingEquity,
+
+      result.totalProfit,
+
+      result
+        .totalReturnPercent,
+
+      result.totalFees,
+
+      result
+        .closedTradeCount,
+
+      result.orderCount,
+
+      result.wins,
+
+      result.losses,
+
+      result.winRate,
+
+      result.grossProfit,
+
+      result.grossLoss,
+
+      result.profitFactor,
+
+      result.averageTrade,
+
+      result
+        .maximumDrawdownAmount,
+
+      result
+        .maximumDrawdownPercent,
+
+      result
+        .profitableWindows,
+
+      result
+        .losingWindows,
+
+      result
+        .breakEvenWindows,
+
+      result
+        .profitableWindowRate,
+
+      result
+        .averageTrainingReturnPercent,
+
+      result
+        .averageTestingReturnPercent,
+
+      result
+        .averageReturnDegradationPercent,
+
+      JSON.stringify(
+        result.settings,
+      ),
+
+      JSON.stringify(
+        storedWindows,
+      ),
+
+      JSON.stringify(
+        storedClosedTrades,
+      ),
+
+      JSON.stringify(
+        storedEquityCurve,
+      ),
+
+      result.completedAt,
+
+      createdAt,
+    );
+
+  return {
+    id,
+
+    ...result,
+
+    createdAt,
+  };
+}
+
+export async function getRecentWalkForwardTests(
+  limit = 10,
+) {
+  const safeLimit =
+    Math.min(
+      Math.max(
+        Number(
+          limit,
+        ) ||
+          10,
+        1,
+      ),
+      50,
+    );
+
+  const rows =
+    database
+      .prepare(
+        `
+          SELECT *
+          FROM walk_forward_tests
+          ORDER BY created_at DESC
+          LIMIT ?
+        `,
+      )
+      .all(
+        safeLimit,
+      );
+
+  return rows.map(
+    (
+      row,
+    ) => ({
+      id:
+        row.id,
+
+      symbol:
+        row.symbol,
+
+      timeframe:
+        row.timeframe,
+
+      candleCount:
+        Number(
+          row.candle_count,
+        ),
+
+      trainingWindow:
+        Number(
+          row.training_window,
+        ),
+
+      testingWindow:
+        Number(
+          row.testing_window,
+        ),
+
+      stepSize:
+        Number(
+          row.step_size,
+        ),
+
+      windowCount:
+        Number(
+          row.window_count,
+        ),
+
+      startingCash:
+        Number(
+          row.starting_cash,
+        ),
+
+      endingEquity:
+        Number(
+          row.ending_equity,
+        ),
+
+      totalProfit:
+        Number(
+          row.total_profit,
+        ),
+
+      totalReturnPercent:
+        Number(
+          row
+            .total_return_percent,
+        ),
+
+      totalFees:
+        Number(
+          row.total_fees,
+        ),
+
+      closedTradeCount:
+        Number(
+          row
+            .closed_trade_count,
+        ),
+
+      orderCount:
+        Number(
+          row.order_count,
+        ),
+
+      wins:
+        Number(
+          row.wins,
+        ),
+
+      losses:
+        Number(
+          row.losses,
+        ),
+
+      winRate:
+        Number(
+          row.win_rate,
+        ),
+
+      grossProfit:
+        Number(
+          row.gross_profit,
+        ),
+
+      grossLoss:
+        Number(
+          row.gross_loss,
+        ),
+
+      profitFactor:
+        row.profit_factor ===
+        null
+          ? null
+          : Number(
+              row.profit_factor,
+            ),
+
+      averageTrade:
+        Number(
+          row.average_trade,
+        ),
+
+      maximumDrawdownAmount:
+        Number(
+          row
+            .maximum_drawdown_amount,
+        ),
+
+      maximumDrawdownPercent:
+        Number(
+          row
+            .maximum_drawdown_percent,
+        ),
+
+      profitableWindows:
+        Number(
+          row
+            .profitable_windows,
+        ),
+
+      losingWindows:
+        Number(
+          row.losing_windows,
+        ),
+
+      breakEvenWindows:
+        Number(
+          row
+            .break_even_windows,
+        ),
+
+      profitableWindowRate:
+        Number(
+          row
+            .profitable_window_rate,
+        ),
+
+      averageTrainingReturnPercent:
+        Number(
+          row
+            .average_training_return_percent,
+        ),
+
+      averageTestingReturnPercent:
+        Number(
+          row
+            .average_testing_return_percent,
+        ),
+
+      averageReturnDegradationPercent:
+        Number(
+          row
+            .average_return_degradation_percent,
+        ),
+
+      settings:
+        parseJson(
+          row.settings_json,
+          {},
+        ),
+
+      windows:
+        parseJson(
+          row.windows_json,
+          [],
+        ),
+
+      closedTrades:
+        parseJson(
+          row
+            .closed_trades_json,
+          [],
+        ),
+
+      equityCurve:
+        parseJson(
+          row
+            .equity_curve_json,
+          [],
+        ),
+
+      completedAt:
+        Number(
+          row.completed_at,
+        ),
+
+      createdAt:
+        Number(
+          row.created_at,
+        ),
+    }),
+  );
 }
 
 export async function getRecentBacktests(
@@ -1085,7 +3235,8 @@ export async function getRecentBacktests(
       Math.max(
         Number(
           limit,
-        ) || 10,
+        ) ||
+          10,
         1,
       ),
       50,
@@ -1106,7 +3257,9 @@ export async function getRecentBacktests(
       );
 
   return rows.map(
-    (row) => ({
+    (
+      row,
+    ) => ({
       id:
         row.id,
 
